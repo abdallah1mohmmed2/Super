@@ -15,13 +15,13 @@ jobs:
   build-windows:
     runs-on: windows-latest
     steps:
-      - name: Checkout clean repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Verify source archive
         shell: pwsh
         run: |
-          if (!(Test-Path "store-erp-upload.zip")) {
+          if (!(Test-Path ".\\store-erp-upload.zip")) {
             throw "store-erp-upload.zip is missing from repository root."
           }
 
@@ -30,14 +30,15 @@ jobs:
         run: |
           $destination = Join-Path $env:RUNNER_TEMP "store-erp-source"
           New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Expand-Archive -LiteralPath "store-erp-upload.zip" -DestinationPath $destination -Force
+          Expand-Archive -LiteralPath ".\\store-erp-upload.zip" -DestinationPath $destination -Force
           $pubspec = Get-ChildItem -LiteralPath $destination -Filter "pubspec.yaml" -File -Recurse |
             Select-Object -First 1
           if ($null -eq $pubspec) {
-            throw "No pubspec.yaml found inside store-erp-upload.zip. The archive must contain a Flutter project."
+            throw "No pubspec.yaml found inside store-erp-upload.zip."
           }
-          "FLUTTER_PROJECT_DIR=$($pubspec.Directory.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Flutter project found at $($pubspec.Directory.FullName)"
+          $projectDir = $pubspec.Directory.FullName
+          "FLUTTER_PROJECT_DIR=$projectDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Flutter project: $projectDir"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -45,12 +46,12 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Enable Windows desktop
+      - name: Enable Windows desktop support
         shell: pwsh
         run: |
           flutter config --enable-windows-desktop
           Set-Location "$env:FLUTTER_PROJECT_DIR"
-          if (!(Test-Path "windows")) {
+          if (!(Test-Path "windows\\CMakeLists.txt")) {
             flutter create --platforms=windows .
           }
 
@@ -65,13 +66,32 @@ jobs:
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
           flutter build windows --release
+          if ($LASTEXITCODE -ne 0) { throw "flutter build windows failed." }
+
+      - name: Stage release files
+        shell: pwsh
+        run: |
+          $candidates = @(
+            (Join-Path $env:FLUTTER_PROJECT_DIR "build\\windows\\x64\\runner\\Release"),
+            (Join-Path $env:FLUTTER_PROJECT_DIR "build\\windows\\runner\\Release")
+          )
+          $release = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (!$release) {
+            throw "Build completed but the Windows Release folder was not found."
+          }
+          $staging = Join-Path $env:RUNNER_TEMP "Store-ERP-Windows-Release"
+          New-Item -ItemType Directory -Force -Path $staging | Out-Null
+          Copy-Item -Path (Join-Path $release "*") -Destination $staging -Recurse -Force
+          if (!(Get-ChildItem -Path $staging -File -Recurse | Where-Object { $_.Extension -eq ".exe" })) {
+            throw "No .exe file found in the staged release."
+          }
+          "STORE_ERP_RELEASE_DIR=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Get-ChildItem -Path $staging -Recurse
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
           name: Store-ERP-Windows-Release
-          path: |
-            ${{ env.RUNNER_TEMP }}/store-erp-source/**/build/windows/**/runner/Release/**
-            ${{ env.RUNNER_TEMP }}/store-erp-source/**/build/windows/runner/Release/**
+          path: ${{ env.STORE_ERP_RELEASE_DIR }}
           if-no-files-found: error
           retention-days: 14
