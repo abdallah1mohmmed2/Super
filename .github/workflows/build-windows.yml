@@ -87,46 +87,12 @@ jobs:
             Write-Host "===== END SOURCE: $path ====="
           }
 
-      - name: Repair verified delimiter errors and validate
+      - name: Format and validate Flutter source
         shell: pwsh
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
-
-          function Update-UniqueLine([string]$Path, [string]$Prefix, [string]$Operation) {
-            $lines = [System.Collections.Generic.List[string]]::new()
-            (Get-Content -LiteralPath $Path) | ForEach-Object { $lines.Add($_) }
-            $matches = @()
-            for ($i = 0; $i -lt $lines.Count; $i++) {
-              if ($lines[$i].TrimStart().StartsWith($Prefix)) { $matches += $i }
-            }
-            if ($matches.Count -lt 1) {
-              throw "Expected at least one source line starting with '$Prefix' in $Path; found none."
-            }
-            foreach ($i in $matches) {
-              $line = $lines[$i]
-              if (!$line.TrimEnd().EndsWith(";")) { throw "Expected statement terminator in $Path for '$Prefix'." }
-              if ($Operation -eq "add-close") {
-                $trimmed = $line.TrimEnd()
-                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 1) + ");"
-              } elseif ($Operation -eq "add-close-twice") {
-                $trimmed = $line.TrimEnd()
-                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 1) + "));"
-              } elseif ($Operation -eq "remove-close") {
-                $trimmed = $line.TrimEnd()
-                if (!$trimmed.EndsWith("));")) { throw "Expected at least two closing parentheses before semicolon in $Path for '$Prefix'." }
-                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 3) + ");"
-              }
-            }
-            Set-Content -LiteralPath $Path -Value $lines -Encoding utf8
-          }
-
-          Update-UniqueLine "lib/screens/login_screen.dart" "@override Widget build(BuildContext context)=>Scaffold(" "add-close"
-          Update-UniqueLine "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "remove-close"
-          Update-UniqueLine "lib/screens/data_screen.dart" "actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false)" "remove-close"
-          Update-UniqueLine "lib/screens/data_screen.dart" "return SectionCard(title:'بنود المستند رقم" "none"
-
           dart format lib
-          if ($LASTEXITCODE -ne 0) { throw "dart format failed after guarded delimiter corrections." }
+          if ($LASTEXITCODE -ne 0) { throw "dart format reported Dart syntax errors; see formatter diagnostics above." }
           flutter analyze --no-pub
           if ($LASTEXITCODE -ne 0) { throw "flutter analyze reported issues." }
 
