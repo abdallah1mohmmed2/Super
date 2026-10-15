@@ -1,0 +1,52 @@
+name: Extract Flutter project into repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract-project:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+
+      - name: Verify archive
+        run: test -f store-erp-upload.zip
+
+      - name: Extract project files
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/store-erp-source"
+          unzip -q store-erp-upload.zip -d "$RUNNER_TEMP/store-erp-source"
+          PUBSPEC="$(find "$RUNNER_TEMP/store-erp-source" -type f -name pubspec.yaml -print -quit)"
+          if [ -z "$PUBSPEC" ]; then
+            echo "No pubspec.yaml found inside store-erp-upload.zip"
+            exit 1
+          fi
+          PROJECT_DIR="$(dirname "$PUBSPEC")"
+          TARGET="store-erp-flutter"
+          mkdir -p "$TARGET"
+          cp -a "$PROJECT_DIR"/. "$TARGET"/
+          test -f "$TARGET/pubspec.yaml"
+          echo "Extracted Flutter project into $TARGET"
+          find "$TARGET" -maxdepth 3 -type f | sort | head -200
+
+      - name: Commit uncompressed project
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- store-erp-flutter
+          if git diff --cached --quiet; then
+            echo "No changes to commit; the uncompressed project is already up to date."
+          else
+            git commit -m "Add uncompressed Flutter ERP project"
+            git push
+          fi
