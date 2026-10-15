@@ -141,6 +141,13 @@ jobs:
             "              );"
           )
           for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
+          # Balance the builder callback closure left after replacing the SectionCard block.
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].Trim() -eq "]))," -or $lines[$i].Trim() -eq "]))," ) {
+              $lines[$i] = $lines[$i].Replace("])),", "]))),")
+              break
+            }
+          }
           Set-Content -LiteralPath $p -Value $lines -Encoding utf8
 
           $p = "lib/screens/modules/closing_screen.dart"
@@ -208,7 +215,9 @@ jobs:
           Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
           for ($i = 0; $i -lt $lines.Count; $i++) {
             if ($lines[$i].TrimStart().StartsWith("@override Widget build(BuildContext context)=>Scaffold(")) {
-              $lines[$i] = $lines[$i] + ")"
+              if ($lines[$i].TrimEnd().EndsWith(";")) {
+                $lines[$i] = $lines[$i].TrimEnd().Substring(0, $lines[$i].TrimEnd().Length - 1) + ");"
+              }
               break
             }
           }
