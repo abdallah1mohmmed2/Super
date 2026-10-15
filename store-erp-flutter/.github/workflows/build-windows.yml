@@ -1,0 +1,58 @@
+name: Build Store ERP for Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Generate Windows runner files if missing
+        shell: pwsh
+        run: flutter create --platforms=windows .
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release version
+        run: flutter build windows --release
+
+      - name: Package Windows app
+        shell: pwsh
+        run: |
+          $releaseDir = "build/windows/x64/runner/Release"
+          if (!(Test-Path "$releaseDir/store_erp_flutter.exe")) {
+            Write-Error "Expected executable was not found at $releaseDir/store_erp_flutter.exe"
+            Get-ChildItem "build/windows" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 100 FullName
+            exit 1
+          }
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "Store-ERP-Windows-x64.zip" -Force
+
+      - name: Upload Windows build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Store-ERP-Windows-x64
+          path: Store-ERP-Windows-x64.zip
+          if-no-files-found: error
+          retention-days: 14
