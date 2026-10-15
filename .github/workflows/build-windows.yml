@@ -115,7 +115,7 @@ jobs:
           # Repair only the exact malformed lines reported by dart format.
           Edit-Line "lib/screens/login_screen.dart" "@override Widget build(BuildContext context)=>Scaffold(" "add-close"
           Edit-Line "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "add-close"
-          Edit-Line "lib/screens/data_screen.dart" "      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);" "remove-close"
+          Edit-Line "lib/screens/data_screen.dart" "actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);" "remove-close"
           Edit-Line "lib/screens/data_screen.dart" "              return SectionCard(title:'بنود المستند رقم" "add-close"
 
           dart format lib
