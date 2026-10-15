@@ -102,7 +102,7 @@ jobs:
                 $lines[[int]$lineNo - 1] = $line + ")"
               } else {
                 if ($line.EndsWith(");")) {
-                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 2) + ");"
+                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 2) + ";"
                 } elseif ($line.EndsWith(")));")) {
                   $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 3) + "));"
                 } else {
