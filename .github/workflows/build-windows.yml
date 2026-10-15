@@ -89,22 +89,24 @@ jobs:
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
           $targets = @{
-            "lib/screens/login_screen.dart" = @{ 9 = "append" }
-            "lib/screens/modules/closing_screen.dart" = @{ 23 = "append" }
-            "lib/screens/data_screen.dart" = @{ 208 = "remove" ; 403 = "append" ; 413 = "append" }
+            "lib/screens/login_screen.dart" = @{ 9 = "insert-before-semicolon" }
+            "lib/screens/modules/closing_screen.dart" = @{ 23 = "insert-before-semicolon" }
+            "lib/screens/data_screen.dart" = @{ 208 = "remove-before-semicolon" ; 403 = "insert-before-semicolon" ; 413 = "insert-before-semicolon" }
           }
           foreach ($path in $targets.Keys) {
             $lines = [System.Collections.Generic.List[string]]::new()
             (Get-Content -LiteralPath $path) | ForEach-Object { $lines.Add($_) }
             foreach ($lineNo in $targets[$path].Keys) {
               $line = $lines[[int]$lineNo - 1]
-              if ($targets[$path][$lineNo] -eq "append") {
-                $lines[[int]$lineNo - 1] = $line + ")"
-              } else {
-                if ($line.EndsWith(");")) {
-                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 2) + ";"
+              $action = $targets[$path][$lineNo]
+              if ($action -eq "insert-before-semicolon") {
+                if (!$line.EndsWith(";")) { throw "Expected semicolon at $path line $lineNo : $line" }
+                $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 1) + ");"
+              } elseif ($action -eq "remove-before-semicolon") {
+                if ($line.EndsWith("));")) {
+                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 3) + ");"
                 } elseif ($line.EndsWith(")));")) {
-                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 3) + "));"
+                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 4) + "));"
                 } else {
                   throw "Unexpected ending at $path line $lineNo : $line"
                 }
