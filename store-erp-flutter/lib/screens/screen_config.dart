@@ -20,7 +20,7 @@ const screenConfigs = <String, ScreenConfig>{
  'cashboxes': ScreenConfig('إدارة الصناديق','cash_boxes',['name','is_active'],['id','name','balance','is_active']),
  'cashtransfers': ScreenConfig('تحويل الصناديق','cash_transfers',['transfer_no','from_cashbox_id','to_cashbox_id','amount','reason'],['id','transfer_no','from_cashbox_id','to_cashbox_id','amount','status','transfer_date']),
  'countdocs': ScreenConfig('متابعة مستندات الجرد','inventory_documents',['document_no','inventory_date','warehouse_id','inventory_type'],['id','document_no','inventory_date','warehouse_id','inventory_type','status']),
- 'counts': ScreenConfig('الجرد الفعلي','inventory_items',['document_id','product_id','count_qty','count_qty2'],['id','document_id','product_id','book_qty','count_qty','count_qty2','difference','difference_cost']),
+ 'counts': ScreenConfig('الجرد الفعلي','inventory_items',['document_id','product_id','count_qty','count_qty2'],['id','document_id','product_id','book_qty','count_qty','count_qty2','difference','difference_cost'])),
  'dailycount': ScreenConfig('الجرد اليومي','inventory_items',['document_id','product_id','book_qty','count_qty','difference'],['id','document_id','product_id','book_qty','count_qty','difference']),
  'monthlycount': ScreenConfig('الجرد الشهري','inventory_items',['document_id','product_id','book_qty','count_qty','difference'],['id','document_id','product_id','book_qty','count_qty','difference']),
  'yearlycount': ScreenConfig('الجرد السنوي','inventory_items',['document_id','product_id','book_qty','count_qty','difference'],['id','document_id','product_id','book_qty','count_qty','difference']),
