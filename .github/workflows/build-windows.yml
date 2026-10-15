@@ -141,14 +141,6 @@ jobs:
             "              );"
           )
           for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
-          # Close the outer SectionCard child expression in the data screen.
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].Trim() -eq "]))," ) {
-              $lines[$i] = $lines[$i].Replace("])),", "]))),")
-              break
-            }
-          }
-
           Set-Content -LiteralPath $p -Value $lines -Encoding utf8
 
           $p = "lib/screens/modules/closing_screen.dart"
