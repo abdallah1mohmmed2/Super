@@ -99,18 +99,20 @@ jobs:
             for ($i = 0; $i -lt $lines.Count; $i++) {
               if ($lines[$i].TrimStart().StartsWith($Prefix)) { $matches += $i }
             }
-            if ($matches.Count -ne 1) {
-              throw "Expected exactly one source line starting with '$Prefix' in $Path; found $($matches.Count). No guess-based edit performed."
+            if ($matches.Count -lt 1) {
+              throw "Expected at least one source line starting with '$Prefix' in $Path; found none."
             }
-            $i = $matches[0]
-            $line = $lines[$i]
-            if (!$line.TrimEnd().EndsWith(";")) { throw "Expected statement terminator in $Path for '$Prefix'." }
-            if ($Operation -eq "add-close") {
-              $lines[$i] = $line.TrimEnd().Substring(0, $line.TrimEnd().Length - 1) + ");"
-            } elseif ($Operation -eq "remove-close") {
-              $trimmed = $line.TrimEnd()
-              if (!$trimmed.EndsWith("));")) { throw "Expected at least two closing parentheses before semicolon in $Path for '$Prefix'." }
-              $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 3) + ");"
+            foreach ($i in $matches) {
+              $line = $lines[$i]
+              if (!$line.TrimEnd().EndsWith(";")) { throw "Expected statement terminator in $Path for '$Prefix'." }
+              if ($Operation -eq "add-close") {
+                $trimmed = $line.TrimEnd()
+                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 1) + ");"
+              } elseif ($Operation -eq "remove-close") {
+                $trimmed = $line.TrimEnd()
+                if (!$trimmed.EndsWith("));")) { throw "Expected at least two closing parentheses before semicolon in $Path for '$Prefix'." }
+                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 3) + ");"
+              }
             }
             Set-Content -LiteralPath $Path -Value $lines -Encoding utf8
           }
