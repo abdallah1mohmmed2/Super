@@ -519,7 +519,50 @@ class _DataScreenState extends State<DataScreen> {
             FutureBuilder<List<Map<String,Object?>>>(future:DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),builder:(context,lineSnapshot){
               final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
               final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
-              return SectionCard(title:'بنود المستند رقم $_selectedId (${lineRows.length})',trailing:TextButton.icon(onPressed:_addLine,icon:const Icon(Icons.add),label:const Text('إضافة بند')),child:lineSnapshot.hasError?Text('تعذر تحميل البنود: ${lineSnapshot.error}'):lineRows.isEmpty?const Text('لا توجد بنود لهذا المستند بعد'):SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:[...keys.map((k)=>DataColumn(label:Text(fieldLabel(k)))),const DataColumn(label:Text('إجراء'))],rows:lineRows.map((r)=>DataRow(cells:[...keys.map((k)=>DataCell(Text((r[k]??'—').toString()))),DataCell(IconButton(tooltip:'حذف البند',onPressed:()=>_deleteLine(r),icon:const Icon(Icons.delete_outline,color:Colors.red))])).toList())));
+              return SectionCard(
+                title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
+                trailing: TextButton.icon(
+                  onPressed: _addLine,
+                  icon: const Icon(Icons.add),
+                  label: const Text('إضافة بند'),
+                ),
+                child: lineSnapshot.hasError
+                    ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')
+                    : lineRows.isEmpty
+                        ? const Text('لا توجد بنود لهذا المستند بعد')
+                        : SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              columns: [
+                                ...keys.map(
+                                  (k) => DataColumn(label: Text(fieldLabel(k))),
+                                ),
+                                const DataColumn(label: Text('إجراء')),
+                              ],
+                              rows: lineRows.map((r) {
+                                return DataRow(
+                                  cells: [
+                                    ...keys.map(
+                                      (k) => DataCell(
+                                        Text((r[k] ?? '—').toString()),
+                                      ),
+                                    ),
+                                    DataCell(
+                                      IconButton(
+                                        tooltip: 'حذف البند',
+                                        onPressed: () => _deleteLine(r),
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          color: Colors.red,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                );
+                              }).toList(),
+                            ),
+                          ),
+              );
             }),
           ],
           const SizedBox(height: 16),
