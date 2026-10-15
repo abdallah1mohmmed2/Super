@@ -87,10 +87,37 @@ jobs:
             Write-Host "===== END SOURCE: $path ====="
           }
 
-      - name: Format and validate Flutter source
+      - name: Repair known syntax errors, format and validate
         shell: pwsh
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
+
+          function Edit-Line([string]$Path, [string]$Prefix, [string]$Mode) {
+            $lines = [System.Collections.Generic.List[string]]::new()
+            (Get-Content -LiteralPath $Path) | ForEach-Object { $lines.Add($_) }
+            $found = @()
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+              if ($lines[$i].TrimStart().StartsWith($Prefix)) { $found += $i }
+            }
+            if ($found.Count -ne 1) { throw "Expected exactly one line for '$Prefix' in $Path; found $($found.Count)." }
+            $i = $found[0]
+            $line = $lines[$i].TrimEnd()
+            if ($Mode -eq "add-close") {
+              if (!$line.EndsWith(";")) { throw "Unexpected line ending for $Prefix" }
+              $lines[$i] = $line.Substring(0, $line.Length - 1) + ");"
+            } elseif ($Mode -eq "remove-close") {
+              if (!$line.EndsWith(")));")) { throw "Unexpected line ending for $Prefix" }
+              $lines[$i] = $line.Substring(0, $line.Length - 4) + "));"
+            }
+            Set-Content -LiteralPath $Path -Value $lines -Encoding utf8
+          }
+
+          # Repair only the exact malformed lines reported by dart format.
+          Edit-Line "lib/screens/login_screen.dart" "@override Widget build(BuildContext context)=>Scaffold(" "add-close"
+          Edit-Line "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "add-close"
+          Edit-Line "lib/screens/data_screen.dart" "      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);" "remove-close"
+          Edit-Line "lib/screens/data_screen.dart" "              return SectionCard(title:'بنود المستند رقم" "add-close"
+
           dart format lib
           if ($LASTEXITCODE -ne 0) { throw "dart format reported Dart syntax errors; see formatter diagnostics above." }
           flutter analyze --no-pub
