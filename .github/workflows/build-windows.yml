@@ -87,36 +87,119 @@ jobs:
             Write-Host "===== END SOURCE: $path ====="
           }
 
-      - name: Repair known syntax errors, format and validate
+      - name: Repair syntax, format and validate
         shell: pwsh
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
 
-          function Edit-Line([string]$Path, [string]$Prefix, [string]$Mode) {
-            $lines = [System.Collections.Generic.List[string]]::new()
-            (Get-Content -LiteralPath $Path) | ForEach-Object { $lines.Add($_) }
-            $found = @()
-            for ($i = 0; $i -lt $lines.Count; $i++) {
-              if ($lines[$i].TrimStart().StartsWith($Prefix)) { $found += $i }
-            }
-            if ($found.Count -ne 1) { throw "Expected exactly one line for '$Prefix' in $Path; found $($found.Count)." }
-            $i = $found[0]
-            $line = $lines[$i].TrimEnd()
-            if ($Mode -eq "add-close") {
-              if (!$line.EndsWith(";")) { throw "Unexpected line ending for $Prefix" }
-              $lines[$i] = $line.Substring(0, $line.Length - 1) + ");"
-            } elseif ($Mode -eq "remove-close") {
-              if (!$line.EndsWith(")));")) { throw "Unexpected line ending for $Prefix" }
-              $lines[$i] = $line.Substring(0, $line.Length - 4) + "));"
-            }
-            Set-Content -LiteralPath $Path -Value $lines -Encoding utf8
-          }
+          # Replace malformed compressed expressions with readable, balanced Dart.
+          $p = "lib/screens/data_screen.dart"
+          $lines = [System.Collections.Generic.List[string]]::new()
+          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
 
-          # Repair only the exact malformed lines reported by dart format.
-          Edit-Line "lib/screens/login_screen.dart" "@override Widget build(BuildContext context)=>Scaffold(" "add-close"
-          Edit-Line "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "add-close"
-          Edit-Line "lib/screens/data_screen.dart" "actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);" "remove-close"
-          Edit-Line "lib/screens/data_screen.dart" "return SectionCard(title:'بنود المستند رقم" "add-close"
+          $idx = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith("actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false)")) { $idx = $i; break }
+          }
+          if ($idx -lt 0) { throw "Could not locate add-line dialog actions in data_screen.dart" }
+          $lines[$idx] = "      actions: ["
+          $lines.Insert($idx + 1, "        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),")
+          $lines.Insert($idx + 2, "        FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('إضافة')),")
+          $lines.Insert($idx + 3, "      ],")
+          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
+
+          $lines = [System.Collections.Generic.List[string]]::new()
+          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
+          $idx = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith("return SectionCard(title:'بنود المستند رقم")) { $idx = $i; break }
+          }
+          if ($idx -lt 0) { throw "Could not locate document lines SectionCard in data_screen.dart" }
+          $lines.RemoveAt($idx)
+          $block = @(
+            "              return SectionCard(",
+            "                title: 'بنود المستند رقم $_selectedId (${lineRows.length})',",
+            "                trailing: TextButton.icon(onPressed: _addLine, icon: const Icon(Icons.add), label: const Text('إضافة بند')),",
+            "                child: lineSnapshot.hasError",
+            "                    ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')",
+            "                    : lineRows.isEmpty",
+            "                        ? const Text('لا توجد بنود لهذا المستند بعد')",
+            "                        : SingleChildScrollView(",
+            "                            scrollDirection: Axis.horizontal,",
+            "                            child: DataTable(",
+            "                              columns: [",
+            "                                ...keys.map((k) => DataColumn(label: Text(fieldLabel(k)))),",
+            "                                const DataColumn(label: Text('إجراء')),",
+            "                              ],",
+            "                              rows: lineRows.map((r) => DataRow(cells: [",
+            "                                ...keys.map((k) => DataCell(Text((r[k] ?? '—').toString()))),",
+            "                                DataCell(IconButton(tooltip: 'حذف البند', onPressed: () => _deleteLine(r), icon: const Icon(Icons.delete_outline, color: Colors.red))),",
+            "                              ])).toList(),",
+            "                            ),",
+            "                          ),",
+            "              );"
+          )
+          for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
+          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
+
+          $p = "lib/screens/modules/closing_screen.dart"
+          $lines = [System.Collections.Generic.List[string]]::new()
+          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
+          $idx = -1
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith("@override Widget build(BuildContext context)=>ListView(")) { $idx = $i; break }
+          }
+          if ($idx -lt 0) { throw "Could not locate closing screen build method" }
+          $lines.RemoveAt($idx)
+          $block = @(
+            "  @override",
+            "  Widget build(BuildContext context) => ListView(",
+            "    padding: const EdgeInsets.all(18),",
+            "    children: [",
+            "      const Text('الإقفال اليومي', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),",
+            "      const SizedBox(height: 8),",
+            "      const Text('يمنع الإقفال وجود مستندات مبيعات أو مشتريات غير مرحلة في التاريخ المختار.'),",
+            "      const SizedBox(height: 12),",
+            "      Card(child: Padding(padding: const EdgeInsets.all(16), child: Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [",
+            "        OutlinedButton.icon(onPressed: () async { final v = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100)); if (v != null) setState(() => _date = v); }, icon: const Icon(Icons.calendar_month), label: Text('التاريخ: ${_date.toIso8601String().substring(0, 10)}')),",
+            "        FilledButton.icon(onPressed: _busy ? null : _closeDay, icon: const Icon(Icons.lock_clock), label: Text(_busy ? 'جارٍ الإقفال...' : 'إقفال اليوم')),",
+            "      ]))),",
+            "      const SizedBox(height: 14),",
+            "      FutureBuilder<List<Map<String, Object?>>>(",
+            "        future: _future,",
+            "        builder: (context, s) => Card(",
+            "          child: Padding(",
+            "            padding: const EdgeInsets.all(14),",
+            "            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [",
+            "              const Text('سجل الإقفالات السابقة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),",
+            "              const SizedBox(height: 8),",
+            "              if (s.connectionState == ConnectionState.waiting) const LinearProgressIndicator()",
+            "              else if (s.hasError) Text('خطأ: ${s.error}')",
+            "              else if ((s.data ?? []).isEmpty) const Text('لا توجد إقفالات سابقة')",
+            "              else SingleChildScrollView(",
+            "                scrollDirection: Axis.horizontal,",
+            "                child: DataTable(",
+            "                  columns: const [",
+            "                    DataColumn(label: Text('التاريخ')), DataColumn(label: Text('المبيعات')),",
+            "                    DataColumn(label: Text('المتحصلات')), DataColumn(label: Text('المشتريات')),",
+            "                    DataColumn(label: Text('أرصدة الصناديق')), DataColumn(label: Text('المستخدم')),",
+            "                  ],",
+            "                  rows: s.data!.map((r) => DataRow(cells: [",
+            "                    DataCell(Text('${r['close_date']}')), DataCell(Text(_money(r['sales_total']))),",
+            "                    DataCell(Text(_money(r['sales_paid']))), DataCell(Text(_money(r['purchases_total']))),",
+            "                    DataCell(Text(_money(r['cash_total']))), DataCell(Text('${r['closed_by'] ?? '—'}')),",
+            "                  ])).toList(),",
+            "                ),",
+            "              ),",
+            "            ]),",
+            "          ),",
+            "        ),",
+            "      ),",
+            "    ],",
+            "  );"
+          )
+          for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
+          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
 
           dart format lib
           if ($LASTEXITCODE -ne 0) { throw "dart format reported Dart syntax errors; see formatter diagnostics above." }
