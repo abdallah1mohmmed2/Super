@@ -84,6 +84,37 @@ jobs:
             }
           }
 
+      - name: Repair known Dart delimiter errors
+        shell: pwsh
+        run: |
+          Set-Location "$env:FLUTTER_PROJECT_DIR"
+          $targets = @{
+            "lib/screens/login_screen.dart" = @{ 9 = "append" }
+            "lib/screens/modules/closing_screen.dart" = @{ 23 = "append" }
+            "lib/screens/data_screen.dart" = @{ 208 = "remove" ; 403 = "append" ; 413 = "append" }
+          }
+          foreach ($path in $targets.Keys) {
+            $lines = [System.Collections.Generic.List[string]]::new()
+            (Get-Content -LiteralPath $path) | ForEach-Object { $lines.Add($_) }
+            foreach ($lineNo in $targets[$path].Keys) {
+              $line = $lines[[int]$lineNo - 1]
+              if ($targets[$path][$lineNo] -eq "append") {
+                $lines[[int]$lineNo - 1] = $line + ")"
+              } else {
+                if ($line.EndsWith(");")) {
+                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 2) + ");"
+                } elseif ($line.EndsWith(")));")) {
+                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 3) + "));"
+                } else {
+                  throw "Unexpected ending at $path line $lineNo : $line"
+                }
+              }
+            }
+            Set-Content -LiteralPath $path -Value $lines -Encoding utf8
+          }
+          dart format lib/screens/login_screen.dart lib/screens/modules/closing_screen.dart lib/screens/data_screen.dart
+          flutter analyze --no-pub
+
       - name: Build Windows release
         shell: pwsh
         run: |
