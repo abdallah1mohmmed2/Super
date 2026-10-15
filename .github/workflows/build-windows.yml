@@ -37,7 +37,7 @@ jobs:
             throw "No pubspec.yaml found inside store-erp-upload.zip."
           }
           $projectDir = $pubspec.Directory.FullName
-          "FLUTTER_PROJECT_DIR=$projectDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "FLUTTER_PROJECT_DIR=`$projectDir" | Out-File -FilePath `$env:GITHUB_ENV -Append -Encoding utf8
           Write-Host "Flutter project: $projectDir"
 
       - name: Set up Flutter
@@ -119,10 +119,10 @@ jobs:
           $lines.RemoveAt($idx)
           $block = @(
             "              return SectionCard(",
-            "                title: 'بنود المستند رقم $_selectedId (${lineRows.length})',",
+            "                title: 'بنود المستند رقم `$_selectedId (`${lineRows.length})',",
             "                trailing: TextButton.icon(onPressed: _addLine, icon: const Icon(Icons.add), label: const Text('إضافة بند')),",
             "                child: lineSnapshot.hasError",
-            "                    ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')",
+            "                    ? Text('تعذر تحميل البنود: `${lineSnapshot.error}')",
             "                    : lineRows.isEmpty",
             "                        ? const Text('لا توجد بنود لهذا المستند بعد')",
             "                        : SingleChildScrollView(",
@@ -162,7 +162,7 @@ jobs:
             "      const Text('يمنع الإقفال وجود مستندات مبيعات أو مشتريات غير مرحلة في التاريخ المختار.'),",
             "      const SizedBox(height: 12),",
             "      Card(child: Padding(padding: const EdgeInsets.all(16), child: Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [",
-            "        OutlinedButton.icon(onPressed: () async { final v = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100)); if (v != null) setState(() => _date = v); }, icon: const Icon(Icons.calendar_month), label: Text('التاريخ: ${_date.toIso8601String().substring(0, 10)}')),",
+            "        OutlinedButton.icon(onPressed: () async { final v = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100)); if (v != null) setState(() => _date = v); }, icon: const Icon(Icons.calendar_month), label: Text('التاريخ: `${_date.toIso8601String().substring(0, 10)}')),",
             "        FilledButton.icon(onPressed: _busy ? null : _closeDay, icon: const Icon(Icons.lock_clock), label: Text(_busy ? 'جارٍ الإقفال...' : 'إقفال اليوم')),",
             "      ]))),",
             "      const SizedBox(height: 14),",
@@ -175,7 +175,7 @@ jobs:
             "              const Text('سجل الإقفالات السابقة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),",
             "              const SizedBox(height: 8),",
             "              if (s.connectionState == ConnectionState.waiting) const LinearProgressIndicator()",
-            "              else if (s.hasError) Text('خطأ: ${s.error}')",
+            "              else if (s.hasError) Text('خطأ: `${s.error}')",
             "              else if ((s.data ?? []).isEmpty) const Text('لا توجد إقفالات سابقة')",
             "              else SingleChildScrollView(",
             "                scrollDirection: Axis.horizontal,",
@@ -186,9 +186,9 @@ jobs:
             "                    DataColumn(label: Text('أرصدة الصناديق')), DataColumn(label: Text('المستخدم')),",
             "                  ],",
             "                  rows: s.data!.map((r) => DataRow(cells: [",
-            "                    DataCell(Text('${r['close_date']}')), DataCell(Text(_money(r['sales_total']))),",
+            "                    DataCell(Text('`${r['close_date']}')), DataCell(Text(_money(r['sales_total']))),",
             "                    DataCell(Text(_money(r['sales_paid']))), DataCell(Text(_money(r['purchases_total']))),",
-            "                    DataCell(Text(_money(r['cash_total']))), DataCell(Text('${r['closed_by'] ?? '—'}')),",
+            "                    DataCell(Text(_money(r['cash_total']))), DataCell(Text('`${r['closed_by'] ?? '—'}')),",
             "                  ])).toList(),",
             "                ),",
             "              ),",
@@ -243,7 +243,7 @@ jobs:
           if (!(Get-ChildItem -Path $staging -File -Recurse | Where-Object { $_.Extension -eq ".exe" })) {
             throw "No .exe file found in the staged release."
           }
-          "STORE_ERP_RELEASE_DIR=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          "STORE_ERP_RELEASE_DIR=`$staging" | Out-File -FilePath `$env:GITHUB_ENV -Append -Encoding utf8
           Get-ChildItem -Path $staging -Recurse
 
       - name: Upload Windows build
