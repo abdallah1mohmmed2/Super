@@ -573,7 +573,7 @@ class _DataScreenState extends State<DataScreen> {
             if (snapshot.hasError) Padding(padding: const EdgeInsets.all(16), child: Text('تعذر تحميل البيانات: ${snapshot.error}'))
             else if (rows.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('لا توجد سجلات مطابقة'))
             else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(columns: [...config.columns.map((field) => DataColumn(label: Text(fieldLabel(field)))), const DataColumn(label: Text('إجراءات'))], rows: rows.map((row) => DataRow(selected: row['id'] == _selectedId, onSelectChanged: (_) => _select(row), cells: [...config.columns.map((field) => DataCell(ConstrainedBox(constraints: const BoxConstraints(maxWidth: 220), child: Text((row[field] ?? '—').toString(), overflow: TextOverflow.ellipsis)))), DataCell(Row(mainAxisSize: MainAxisSize.min, children: [IconButton(tooltip: _readOnly ? 'عرض' : 'تعديل', onPressed: () => _select(row), icon: Icon(_readOnly ? Icons.visibility_outlined : Icons.edit_outlined, color: Colors.blue)), if (!_readOnly) IconButton(tooltip: 'حذف', onPressed: () => _delete(row), icon: const Icon(Icons.delete_outline, color: Colors.red))]))])).toList()),
-          ])),
+          ]))),
         ]);
       },
     );
