@@ -61,6 +61,29 @@ jobs:
           Set-Location "$env:FLUTTER_PROJECT_DIR"
           flutter pub get
 
+
+      - name: Diagnose Dart syntax errors
+        if: always()
+        shell: pwsh
+        run: |
+          Set-Location "$env:FLUTTER_PROJECT_DIR"
+          $targets = @(
+            @{ Path = "lib/screens/login_screen.dart"; Lines = @(1, 15) },
+            @{ Path = "lib/screens/modules/closing_screen.dart"; Lines = @(15, 30) },
+            @{ Path = "lib/screens/data_screen.dart"; Lines = @(195, 215) },
+            @{ Path = "lib/screens/data_screen.dart"; Lines = @(395, 420) }
+          )
+          foreach ($target in $targets) {
+            Write-Host "===== $($target.Path):$($target.Lines[0])-$($target.Lines[1]) ====="
+            $lineNo = 0
+            Get-Content $target.Path | ForEach-Object {
+              $lineNo++
+              if ($lineNo -ge $target.Lines[0] -and $lineNo -le $target.Lines[1]) {
+                Write-Host ("{0}: {1}" -f $lineNo, $_)
+              }
+            }
+          }
+
       - name: Build Windows release
         shell: pwsh
         run: |
