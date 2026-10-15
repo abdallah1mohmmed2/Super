@@ -106,6 +106,7 @@ jobs:
           $lines.Insert($idx + 1, "        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),")
           $lines.Insert($idx + 2, "        FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('إضافة')),")
           $lines.Insert($idx + 3, "      ],")
+          $lines.Insert($idx + 4, "    )));")
           Set-Content -LiteralPath $p -Value $lines -Encoding utf8
 
           $lines = [System.Collections.Generic.List[string]]::new()
@@ -199,6 +200,18 @@ jobs:
             "  );"
           )
           for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
+          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
+
+          # Repair one unmatched closing delimiter in the compressed login widget.
+          $p = "lib/screens/login_screen.dart"
+          $lines = [System.Collections.Generic.List[string]]::new()
+          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
+          for ($i = 0; $i -lt $lines.Count; $i++) {
+            if ($lines[$i].TrimStart().StartsWith("@override Widget build(BuildContext context)=>Scaffold(")) {
+              $lines[$i] = $lines[$i] + ")"
+              break
+            }
+          }
           Set-Content -LiteralPath $p -Value $lines -Encoding utf8
 
           dart format lib
