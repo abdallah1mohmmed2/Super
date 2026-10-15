@@ -62,60 +62,39 @@ jobs:
           flutter pub get
 
 
-      - name: Diagnose Dart syntax errors
+      - name: Print source files for exact diagnosis
         if: always()
         shell: pwsh
         run: |
+          if (!(Test-Path "$env:FLUTTER_PROJECT_DIR")) { throw "Flutter source directory was not created." }
           Set-Location "$env:FLUTTER_PROJECT_DIR"
           $targets = @(
-            @{ Path = "lib/screens/login_screen.dart"; Lines = @(1, 15) },
-            @{ Path = "lib/screens/modules/closing_screen.dart"; Lines = @(15, 30) },
-            @{ Path = "lib/screens/data_screen.dart"; Lines = @(195, 215) },
-            @{ Path = "lib/screens/data_screen.dart"; Lines = @(395, 420) }
+            "lib/screens/login_screen.dart",
+            "lib/screens/modules/closing_screen.dart",
+            "lib/screens/data_screen.dart"
           )
-          foreach ($target in $targets) {
-            Write-Host "===== $($target.Path):$($target.Lines[0])-$($target.Lines[1]) ====="
-            $lineNo = 0
-            Get-Content $target.Path | ForEach-Object {
-              $lineNo++
-              if ($lineNo -ge $target.Lines[0] -and $lineNo -le $target.Lines[1]) {
-                Write-Host ("{0}: {1}" -f $lineNo, $_)
+          foreach ($path in $targets) {
+            Write-Host "===== BEGIN SOURCE: $path ====="
+            if (Test-Path $path) {
+              $n = 0
+              Get-Content -LiteralPath $path | ForEach-Object {
+                $n++
+                Write-Host ("{0,4}: {1}" -f $n, $_)
               }
+            } else {
+              Write-Host "MISSING FILE"
             }
+            Write-Host "===== END SOURCE: $path ====="
           }
 
-      - name: Repair known Dart delimiter errors
+      - name: Validate Dart source without rewriting it
         shell: pwsh
         run: |
           Set-Location "$env:FLUTTER_PROJECT_DIR"
-          $targets = @{
-            "lib/screens/login_screen.dart" = @{ 9 = "insert-before-semicolon" }
-            "lib/screens/modules/closing_screen.dart" = @{ 23 = "insert-before-semicolon" }
-            "lib/screens/data_screen.dart" = @{ 208 = "remove-before-semicolon" ; 403 = "insert-before-semicolon" ; 413 = "insert-before-semicolon" }
-          }
-          foreach ($path in $targets.Keys) {
-            $lines = [System.Collections.Generic.List[string]]::new()
-            (Get-Content -LiteralPath $path) | ForEach-Object { $lines.Add($_) }
-            foreach ($lineNo in $targets[$path].Keys) {
-              $line = $lines[[int]$lineNo - 1]
-              $action = $targets[$path][$lineNo]
-              if ($action -eq "insert-before-semicolon") {
-                if (!$line.EndsWith(";")) { throw "Expected semicolon at $path line $lineNo : $line" }
-                $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 1) + ");"
-              } elseif ($action -eq "remove-before-semicolon") {
-                if ($line.EndsWith("));")) {
-                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 3) + ");"
-                } elseif ($line.EndsWith(")));")) {
-                  $lines[[int]$lineNo - 1] = $line.Substring(0, $line.Length - 4) + "));"
-                } else {
-                  throw "Unexpected ending at $path line $lineNo : $line"
-                }
-              }
-            }
-            Set-Content -LiteralPath $path -Value $lines -Encoding utf8
-          }
-          dart format lib/screens/login_screen.dart lib/screens/modules/closing_screen.dart lib/screens/data_screen.dart
+          dart format --output=none --set-exit-if-changed lib
+          if ($LASTEXITCODE -ne 0) { throw "Dart formatter reported source errors or formatting changes; source was not modified." }
           flutter analyze --no-pub
+          if ($LASTEXITCODE -ne 0) { throw "flutter analyze reported issues." }
 
       - name: Build Windows release
         shell: pwsh
