@@ -108,6 +108,9 @@ jobs:
               if ($Operation -eq "add-close") {
                 $trimmed = $line.TrimEnd()
                 $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 1) + ");"
+              } elseif ($Operation -eq "add-close-twice") {
+                $trimmed = $line.TrimEnd()
+                $lines[$i] = $trimmed.Substring(0, $trimmed.Length - 1) + "));"
               } elseif ($Operation -eq "remove-close") {
                 $trimmed = $line.TrimEnd()
                 if (!$trimmed.EndsWith("));")) { throw "Expected at least two closing parentheses before semicolon in $Path for '$Prefix'." }
@@ -118,9 +121,9 @@ jobs:
           }
 
           Update-UniqueLine "lib/screens/login_screen.dart" "@override Widget build(BuildContext context)=>Scaffold(" "add-close"
-          Update-UniqueLine "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "add-close"
-          Update-UniqueLine "lib/screens/data_screen.dart" "actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false)" "remove-close"
-          Update-UniqueLine "lib/screens/data_screen.dart" "return SectionCard(title:'بنود المستند رقم" "add-close"
+          Update-UniqueLine "lib/screens/modules/closing_screen.dart" "@override Widget build(BuildContext context)=>ListView(" "remove-close"
+          Update-UniqueLine "lib/screens/data_screen.dart" "actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false)" "add-close"
+          Update-UniqueLine "lib/screens/data_screen.dart" "return SectionCard(title:'بنود المستند رقم" "add-close-twice"
 
           dart format lib
           if ($LASTEXITCODE -ne 0) { throw "dart format failed after guarded delimiter corrections." }
