@@ -1,12 +1,12 @@
 name: Build Store ERP for Windows
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - "store-erp-upload.zip"
-      - ".github/workflows/build-windows.yml"
   workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "store-erp-flutter/**"
+      - ".github/workflows/build-windows.yml"
 
 permissions:
   contents: read
@@ -14,31 +14,14 @@ permissions:
 jobs:
   build-windows:
     runs-on: windows-latest
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: store-erp-flutter
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Verify source archive
-        shell: pwsh
-        run: |
-          if (!(Test-Path ".\\store-erp-upload.zip")) {
-            throw "store-erp-upload.zip is missing from repository root."
-          }
-
-      - name: Extract Flutter project
-        shell: pwsh
-        run: |
-          $destination = Join-Path $env:RUNNER_TEMP "store-erp-source"
-          New-Item -ItemType Directory -Force -Path $destination | Out-Null
-          Expand-Archive -LiteralPath ".\\store-erp-upload.zip" -DestinationPath $destination -Force
-          $pubspec = Get-ChildItem -LiteralPath $destination -Filter "pubspec.yaml" -File -Recurse |
-            Select-Object -First 1
-          if ($null -eq $pubspec) {
-            throw "No pubspec.yaml found inside store-erp-upload.zip."
-          }
-          $projectDir = $pubspec.Directory.FullName
-          "FLUTTER_PROJECT_DIR=$projectDir" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Write-Host "Flutter project: $projectDir"
 
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
@@ -46,218 +29,60 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Enable Windows desktop support
+      - name: Enable Windows desktop
+        shell: pwsh
+        run: flutter config --enable-windows-desktop
+
+      - name: Generate Windows runner if missing
         shell: pwsh
         run: |
-          flutter config --enable-windows-desktop
-          Set-Location "$env:FLUTTER_PROJECT_DIR"
-          if (!(Test-Path "windows\\CMakeLists.txt")) {
+          if (!(Test-Path "windows/CMakeLists.txt")) {
             flutter create --platforms=windows .
           }
 
       - name: Install dependencies
         shell: pwsh
-        run: |
-          Set-Location "$env:FLUTTER_PROJECT_DIR"
-          flutter pub get
+        run: flutter pub get
 
-
-      - name: Print source files for exact diagnosis
-        if: always()
+      - name: Format Dart source
         shell: pwsh
         run: |
-          if (!(Test-Path "$env:FLUTTER_PROJECT_DIR")) { throw "Flutter source directory was not created." }
-          Set-Location "$env:FLUTTER_PROJECT_DIR"
-          $targets = @(
-            "lib/screens/login_screen.dart",
-            "lib/screens/modules/closing_screen.dart",
-            "lib/screens/data_screen.dart"
-          )
-          foreach ($path in $targets) {
-            Write-Host "===== BEGIN SOURCE: $path ====="
-            if (Test-Path $path) {
-              $n = 0
-              Get-Content -LiteralPath $path | ForEach-Object {
-                $n++
-                Write-Host ("{0,4}: {1}" -f $n, $_)
-              }
-            } else {
-              Write-Host "MISSING FILE"
-            }
-            Write-Host "===== END SOURCE: $path ====="
-          }
-
-      - name: Repair syntax, format and validate
-        shell: pwsh
-        run: |
-          Set-Location "$env:FLUTTER_PROJECT_DIR"
-
-          # Replace malformed compressed expressions with readable, balanced Dart.
-          $p = "lib/screens/data_screen.dart"
-          $lines = [System.Collections.Generic.List[string]]::new()
-          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
-
-          $idx = -1
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].TrimStart().StartsWith("actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false)")) { $idx = $i; break }
-          }
-          if ($idx -lt 0) { throw "Could not locate add-line dialog actions in data_screen.dart" }
-          $lines[$idx] = "      actions: ["
-          $lines.Insert($idx + 1, "        TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),")
-          $lines.Insert($idx + 2, "        FilledButton(onPressed: () { if (formKey.currentState!.validate()) Navigator.pop(ctx, true); }, child: const Text('إضافة')),")
-          $lines.Insert($idx + 3, "      ],")
-          $lines.Insert($idx + 4, "    )));")
-          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
-
-          $lines = [System.Collections.Generic.List[string]]::new()
-          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
-          $idx = -1
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].TrimStart().StartsWith("return SectionCard(title:'بنود المستند رقم")) { $idx = $i; break }
-          }
-          if ($idx -lt 0) { throw "Could not locate document lines SectionCard in data_screen.dart" }
-          $lines.RemoveAt($idx)
-          $block = @(
-            "              return SectionCard(",
-            "                title: 'بنود المستند رقم `$_selectedId (`${lineRows.length})',",
-            "                trailing: TextButton.icon(onPressed: _addLine, icon: const Icon(Icons.add), label: const Text('إضافة بند')),",
-            "                child: lineSnapshot.hasError",
-            "                    ? Text('تعذر تحميل البنود: `${lineSnapshot.error}')",
-            "                    : lineRows.isEmpty",
-            "                        ? const Text('لا توجد بنود لهذا المستند بعد')",
-            "                        : SingleChildScrollView(",
-            "                            scrollDirection: Axis.horizontal,",
-            "                            child: DataTable(",
-            "                              columns: [",
-            "                                ...keys.map((k) => DataColumn(label: Text(fieldLabel(k)))),",
-            "                                const DataColumn(label: Text('إجراء')),",
-            "                              ],",
-            "                              rows: lineRows.map((r) => DataRow(cells: [",
-            "                                ...keys.map((k) => DataCell(Text((r[k] ?? '—').toString()))),",
-            "                                DataCell(",
-            "                                  IconButton(",
-            "                                    tooltip: 'حذف البند',",
-            "                                    onPressed: () => _deleteLine(r),",
-            "                                    icon: const Icon(Icons.delete_outline, color: Colors.red),",
-            "                                  ),",
-            "                                ),",
-            "                              ])).toList(),",
-            "                            ),",
-            "                          ),",
-            "              );"
-          )
-          for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
-          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
-
-          $p = "lib/screens/modules/closing_screen.dart"
-          $lines = [System.Collections.Generic.List[string]]::new()
-          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
-          $idx = -1
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].TrimStart().StartsWith("@override Widget build(BuildContext context)=>ListView(")) { $idx = $i; break }
-          }
-          if ($idx -lt 0) { throw "Could not locate closing screen build method" }
-          $lines.RemoveAt($idx)
-          $block = @(
-            "  @override",
-            "  Widget build(BuildContext context) => ListView(",
-            "    padding: const EdgeInsets.all(18),",
-            "    children: [",
-            "      const Text('الإقفال اليومي', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),",
-            "      const SizedBox(height: 8),",
-            "      const Text('يمنع الإقفال وجود مستندات مبيعات أو مشتريات غير مرحلة في التاريخ المختار.'),",
-            "      const SizedBox(height: 12),",
-            "      Card(child: Padding(padding: const EdgeInsets.all(16), child: Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [",
-            "        OutlinedButton.icon(onPressed: () async { final v = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100)); if (v != null) setState(() => _date = v); }, icon: const Icon(Icons.calendar_month), label: Text('التاريخ: `${_date.toIso8601String().substring(0, 10)}')),",
-            "        FilledButton.icon(onPressed: _busy ? null : _closeDay, icon: const Icon(Icons.lock_clock), label: Text(_busy ? 'جارٍ الإقفال...' : 'إقفال اليوم')),",
-            "      ]))),",
-            "      const SizedBox(height: 14),",
-            "      FutureBuilder<List<Map<String, Object?>>>(",
-            "        future: _future,",
-            "        builder: (context, s) => Card(",
-            "          child: Padding(",
-            "            padding: const EdgeInsets.all(14),",
-            "            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [",
-            "              const Text('سجل الإقفالات السابقة', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),",
-            "              const SizedBox(height: 8),",
-            "              if (s.connectionState == ConnectionState.waiting) const LinearProgressIndicator()",
-            "              else if (s.hasError) Text('خطأ: `${s.error}')",
-            "              else if ((s.data ?? []).isEmpty) const Text('لا توجد إقفالات سابقة')",
-            "              else SingleChildScrollView(",
-            "                scrollDirection: Axis.horizontal,",
-            "                child: DataTable(",
-            "                  columns: const [",
-            "                    DataColumn(label: Text('التاريخ')), DataColumn(label: Text('المبيعات')),",
-            "                    DataColumn(label: Text('المتحصلات')), DataColumn(label: Text('المشتريات')),",
-            "                    DataColumn(label: Text('أرصدة الصناديق')), DataColumn(label: Text('المستخدم')),",
-            "                  ],",
-            "                  rows: s.data!.map((r) => DataRow(cells: [",
-            "                    DataCell(Text('`${r['close_date']}')), DataCell(Text(_money(r['sales_total']))),",
-            "                    DataCell(Text(_money(r['sales_paid']))), DataCell(Text(_money(r['purchases_total']))),",
-            "                    DataCell(Text(_money(r['cash_total']))), DataCell(Text('`${r['closed_by'] ?? '—'}')),",
-            "                  ])).toList(),",
-            "                ),",
-            "              ),",
-            "            ]),",
-            "          ),",
-            "        ),",
-            "      ),",
-            "    ],",
-            "  );"
-          )
-          for ($j = $block.Count - 1; $j -ge 0; $j--) { $lines.Insert($idx, $block[$j]) }
-          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
-
-          # Repair one unmatched closing delimiter in the compressed login widget.
-          $p = "lib/screens/login_screen.dart"
-          $lines = [System.Collections.Generic.List[string]]::new()
-          Get-Content -LiteralPath $p | ForEach-Object { $lines.Add($_) }
-          for ($i = 0; $i -lt $lines.Count; $i++) {
-            if ($lines[$i].TrimStart().StartsWith("@override Widget build(BuildContext context)=>Scaffold(")) {
-              if ($lines[$i].TrimEnd().EndsWith(";")) {
-                $lines[$i] = $lines[$i].TrimEnd().Substring(0, $lines[$i].TrimEnd().Length - 1) + ");"
-              }
-              break
-            }
-          }
-          Set-Content -LiteralPath $p -Value $lines -Encoding utf8
-
           dart format lib
-          if ($LASTEXITCODE -ne 0) { throw "dart format reported Dart syntax errors; see formatter diagnostics above." }
+          if ($LASTEXITCODE -ne 0) { throw "dart format failed." }
+
+      - name: Analyze Flutter project
+        shell: pwsh
+        run: |
           flutter analyze --no-pub
-          if ($LASTEXITCODE -ne 0) { throw "flutter analyze reported issues." }
+          if ($LASTEXITCODE -ne 0) { throw "flutter analyze failed; see diagnostics above." }
 
       - name: Build Windows release
         shell: pwsh
         run: |
-          Set-Location "$env:FLUTTER_PROJECT_DIR"
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { throw "flutter build windows failed." }
 
-      - name: Stage release files
+      - name: Package Windows app
         shell: pwsh
         run: |
-          $candidates = @(
-            (Join-Path $env:FLUTTER_PROJECT_DIR "build\\windows\\x64\\runner\\Release"),
-            (Join-Path $env:FLUTTER_PROJECT_DIR "build\\windows\\runner\\Release")
-          )
-          $release = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-          if (!$release) {
-            throw "Build completed but the Windows Release folder was not found."
+          $releaseDir = "build/windows/x64/runner/Release"
+          if (!(Test-Path $releaseDir)) {
+            $releaseDir = "build/windows/runner/Release"
           }
-          $staging = Join-Path $env:RUNNER_TEMP "Store-ERP-Windows-Release"
-          New-Item -ItemType Directory -Force -Path $staging | Out-Null
-          Copy-Item -Path (Join-Path $release "*") -Destination $staging -Recurse -Force
-          if (!(Get-ChildItem -Path $staging -File -Recurse | Where-Object { $_.Extension -eq ".exe" })) {
-            throw "No .exe file found in the staged release."
+          if (!(Test-Path $releaseDir)) {
+            throw "Windows Release directory was not found."
           }
-          "STORE_ERP_RELEASE_DIR=$staging" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-          Get-ChildItem -Path $staging -Recurse
+          $exe = Get-ChildItem -Path $releaseDir -Filter "*.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $exe) {
+            throw "No .exe file was produced by the Windows build."
+          }
+          Compress-Archive -Path "$releaseDir/*" -DestinationPath "../Store-ERP-Windows-x64.zip" -Force
+          Write-Host "Executable: $($exe.FullName)"
 
-      - name: Upload Windows build
+      - name: Upload Windows build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Store-ERP-Windows-Release
-          path: ${{ env.STORE_ERP_RELEASE_DIR }}
+          name: Store-ERP-Windows-x64
+          path: Store-ERP-Windows-x64.zip
           if-no-files-found: error
           retention-days: 14
