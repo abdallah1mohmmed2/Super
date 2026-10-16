@@ -27,9 +27,18 @@ class _DataScreenState extends State<DataScreen> {
   
   ScreenConfig get config => screenConfigs[widget.screenKey] ?? screenConfigs['products']!;
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
-  static const _numericFields = {'cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
+  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
+
+  static const _choiceFields = <String, List<String>>{
+    'payment_method': ['نقدي', 'آجل', 'جزئي', 'تحويل بنكي'],
+    'inventory_type': ['فعلي', 'يومي', 'شهري', 'سنوي'],
+    'document_type': ['تالف', 'منتهي'],
+    'is_active': ['1', '0'],
+    'roles': ['مدير نظام', 'مدير', 'محاسب', 'كاشير', 'مخزن'],
+    'unit': ['قطعة', 'علبة', 'كرتون', 'كيلوجرام', 'جرام', 'لتر', 'متر'],
+  };
 
   static const _referenceFields = <String, (String, String)>{
     'category_id': ('categories', 'name'),
@@ -72,6 +81,30 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    final choices = _choiceFields[field];
+    if (choices != null) {
+      final current = _controllers[field]!.text;
+      return SizedBox(
+        width: width,
+        child: DropdownButtonFormField<String>(
+          value: choices.contains(current) ? current : null,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: fieldLabel(field),
+            prefixIcon: Icon(_icon(field)),
+          ),
+          hint: const Text('اختر قيمة'),
+          items: choices.map((value) => DropdownMenuItem<String>(
+            value: value,
+            child: Text(value == '1' ? 'نعم / نشط' : value == '0' ? 'لا / غير نشط' : value),
+          )).toList(),
+          onChanged: (value) {
+            _controllers[field]!.text = value ?? '';
+            setState(() {});
+          },
+        ),
+      );
+    }
     final reference = _referenceFields[field];
     final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
     if (reference != null && options.isNotEmpty) {
@@ -576,10 +609,28 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  Future<List<Map<String, Object?>>> _loadRows() async {
+    final rows = await context.read<AppProvider>().load(config.table);
+    final expectedType = switch (widget.screenKey) {
+      'counts' => 'فعلي',
+      'dailycount' => 'يومي',
+      'monthlycount' => 'شهري',
+      'yearlycount' => 'سنوي',
+      _ => null,
+    };
+    if (expectedType == null) return rows;
+    final documents = await DatabaseHelper.instance.query('inventory_documents');
+    final matchingIds = documents
+        .where((row) => (row['inventory_type'] ?? '').toString().contains(expectedType))
+        .map((row) => row['id'])
+        .toSet();
+    return rows.where((row) => matchingIds.contains(row['document_id'])).toList();
+  }
+
   @override 
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String,Object?>>>(
-      future: context.read<AppProvider>().load(config.table),
+      future: _loadRows(),
       builder: (context, snapshot) {
         final all = snapshot.data ?? <Map<String,Object?>>[];
         final rows = all.where((row) => _filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(_filter.toLowerCase()))).toList();
