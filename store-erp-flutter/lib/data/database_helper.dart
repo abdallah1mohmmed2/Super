@@ -283,6 +283,28 @@ class DatabaseHelper {
       final saleRows = await txn.query('sales_header', where: 'id=?', whereArgs: [saleId], limit: 1);
       if (saleRows.isEmpty) throw StateError('فاتورة المبيعات غير موجودة');
       final sale = saleRows.first;
+      final approvalCustomerId = (sale['customer_id'] as num?)?.toInt();
+      if (approvalCustomerId != null) {
+        final approvalCustomers = await txn.query(
+          'customers',
+          where: 'id=?',
+          whereArgs: [approvalCustomerId],
+          limit: 1,
+        );
+        if (approvalCustomers.isNotEmpty &&
+            ((approvalCustomers.first['manager_approval'] as num?)?.toInt() ?? 0) == 1) {
+          final approvals = await txn.query(
+            'approval_requests',
+            where: 'entity_type=? AND entity_id=? AND status=?',
+            whereArgs: ['sales', saleId, 'معتمد'],
+            orderBy: 'id DESC',
+            limit: 1,
+          );
+          if (approvals.isEmpty) {
+            throw StateError('هذا العميل يتطلب موافقة المدير قبل ترحيل الفاتورة');
+          }
+        }
+      }
       final saleDate=(sale['invoice_date']?.toString() ?? '').substring(0,10);
       if ((await txn.query('daily_closings', where:'close_date=?', whereArgs:[saleDate], limit:1)).isNotEmpty) throw StateError('اليوم مقفل ولا يقبل ترحيل مستندات جديدة');
       if (sale['status'] == 'مرحل') throw StateError('الفاتورة مرحلة مسبقًا');
