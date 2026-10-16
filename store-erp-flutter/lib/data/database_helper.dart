@@ -17,7 +17,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 12,
+        version: 13,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -30,7 +30,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 12, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 13, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -132,6 +132,12 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE sales_header ADD COLUMN cash_session_id INTEGER REFERENCES cash_sessions(id)');
       }
     }
+    if (oldVersion < 13) {
+      final salesHeaderColumns = await db.rawQuery('PRAGMA table_info(sales_header)');
+      if (!salesHeaderColumns.any((column) => column['name'] == 'cashier')) {
+        await db.execute('ALTER TABLE sales_header ADD COLUMN cashier TEXT');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -146,7 +152,7 @@ class DatabaseHelper {
       '''CREATE TABLE warehouses(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, is_active INTEGER DEFAULT 1)''',
       '''CREATE TABLE cash_boxes(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1)''',
       '''CREATE TABLE inventory(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id), warehouse_id INTEGER NOT NULL REFERENCES warehouses(id), qty REAL NOT NULL DEFAULT 0, UNIQUE(product_id, warehouse_id))''',
-      '''CREATE TABLE sales_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, invoice_date TEXT NOT NULL, customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), cash_session_id INTEGER REFERENCES cash_sessions(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
+      '''CREATE TABLE sales_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, invoice_date TEXT NOT NULL, customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), cash_session_id INTEGER REFERENCES cash_sessions(id), cashier TEXT, payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE sales_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, sales_id INTEGER NOT NULL REFERENCES sales_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, price REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, line_total REAL NOT NULL, notes TEXT)''',
       '''CREATE TABLE purchases_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, external_no TEXT, invoice_date TEXT NOT NULL, supplier_id INTEGER REFERENCES suppliers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE purchases_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL REFERENCES purchases_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, cost REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, batch_no TEXT, production_date TEXT, expiry_date TEXT, line_total REAL NOT NULL)''',
