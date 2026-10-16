@@ -21,6 +21,11 @@ class DataScreen extends StatefulWidget {
 class _DataScreenState extends State<DataScreen> {
   final Map<String, TextEditingController> _controllers = {};
   final _search = TextEditingController();
+  final _backupFolderController = TextEditingController();
+  final _backupNameController = TextEditingController(text: 'store_backup');
+  final _restorePathController = TextEditingController();
+  bool _verifyBackup = true;
+  bool _safetyCopyBeforeRestore = true;
   String _filter = '';
   int? _selectedId;
   bool _busy = false;
@@ -61,6 +66,7 @@ class _DataScreenState extends State<DataScreen> {
     super.initState();
     _initControllers();
     _loadReferenceOptions();
+    if (widget.screenKey == 'backup') _loadBackupSettings();
   }
 
   Future<void> _loadReferenceOptions() async {
@@ -312,7 +318,10 @@ class _DataScreenState extends State<DataScreen> {
   @override 
   void dispose() { 
     for (final controller in _controllers.values) { controller.dispose(); } 
-    _search.dispose(); 
+    _search.dispose();
+    _backupFolderController.dispose();
+    _backupNameController.dispose();
+    _restorePathController.dispose();
     super.dispose(); 
   }
 
@@ -905,6 +914,59 @@ class _DataScreenState extends State<DataScreen> {
       await file.writeAsString('\uFEFF$csv', flush: true);
       _message('تم التصدير إلى: ${file.path}');
     } catch (e) { _message('تعذر التصدير: $e'); }
+  }
+
+  Future<void> _loadBackupSettings() async {
+    final docs = await getApplicationDocumentsDirectory();
+    final defaultFolder = p.join(docs.path, 'StoreERP', 'backups');
+    final settings = await DatabaseHelper.instance.query('app_settings');
+    final values = <String,String>{
+      for (final row in settings) (row['key'] ?? '').toString(): (row['value'] ?? '').toString(),
+    };
+    if (!mounted) return;
+    setState(() {
+      _backupFolderController.text = values['backup_folder'] ?? defaultFolder;
+      _backupNameController.text = values['backup_file_name'] ?? 'store_backup';
+      _verifyBackup = values['backup_verify'] != 'false';
+      _safetyCopyBeforeRestore = values['backup_safety_copy'] != 'false';
+    });
+  }
+
+  Future<void> _saveBackupSettings() async {
+    final folder = _backupFolderController.text.trim();
+    if (folder.isEmpty) { _message('حدد مجلد حفظ النسخ'); return; }
+    final values = <String,String>{
+      'backup_folder': folder,
+      'backup_file_name': _backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim(),
+      'backup_verify': '$_verifyBackup',
+      'backup_safety_copy': '$_safetyCopyBeforeRestore',
+    };
+    for (final entry in values.entries) {
+      final found = await DatabaseHelper.instance.query('app_settings', where: 'key=?', whereArgs: [entry.key], limit: 1);
+      if (found.isEmpty) {
+        await DatabaseHelper.instance.insert('app_settings', {'key': entry.key, 'value': entry.value});
+      } else {
+        await DatabaseHelper.instance.update('app_settings', {'value': entry.value}, where: 'key=?', whereArgs: [entry.key]);
+      }
+    }
+    _message('تم حفظ إعدادات النسخ');
+  }
+
+  Future<void> _editBackupPath({required bool restore}) async {
+    final controller = TextEditingController(text: restore ? _restorePathController.text : _backupFolderController.text);
+    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(restore ? 'تحديد ملف النسخة' : 'تحديد مجلد حفظ النسخ'),
+      content: SizedBox(width: 520, child: TextField(controller: controller, decoration: InputDecoration(labelText: restore ? 'مسار ملف .db' : 'مسار المجلد'))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('استخدام المسار')),
+      ],
+    ));
+    controller.dispose();
+    if (value == null || value.isEmpty || !mounted) return;
+    setState(() {
+      if (restore) { _restorePathController.text = value; } else { _backupFolderController.text = value; }
+    });
   }
 
   Future<void> _backup() async {
