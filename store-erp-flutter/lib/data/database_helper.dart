@@ -195,8 +195,9 @@ class DatabaseHelper {
       if (net < 0 || paid < 0 || paid > net) throw StateError('تحقق من صافي الفاتورة والمدفوع');
       for (final line in lines) {
         final productId = line['product_id']!.toInt();
-        final qty = line['qty']!.toDouble() * (line['factor'] ?? 1);
-        if (qty <= 0) throw StateError('كمية المشتريات يجب أن تكون أكبر من صفر');
+        final factor = (line['factor'] as num?)?.toDouble() ?? 1;
+        final qty = line['qty']!.toDouble() * factor;
+        if (factor <= 0 || qty <= 0) throw StateError('الكمية ومعامل تحويل الوحدة يجب أن يكونا أكبر من صفر');
         final cost = ((line['cost'] as num?)?.toDouble() ?? 0);
         if (cost < 0) throw StateError('التكلفة لا يمكن أن تكون سالبة');
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
@@ -208,7 +209,8 @@ class DatabaseHelper {
           final oldQty = (inventory.first['qty'] as num).toDouble();
           await txn.update('inventory', {'qty':oldQty+qty}, where:'id=?', whereArgs:[inventory.first['id']]);
         }
-        await txn.update('products', {'cost_price':cost}, where:'id=?', whereArgs:[productId]);
+        // The entered cost is per selected unit; normalize it to the product's base unit.
+        await txn.update('products', {'cost_price':cost / factor}, where:'id=?', whereArgs:[productId]);
         final batchNo = (line['batch_no'] ?? '').toString().trim();
         final expiryDate = (line['expiry_date'] ?? '').toString().trim();
         if (batchNo.isNotEmpty || expiryDate.isNotEmpty) {
@@ -265,6 +267,10 @@ class DatabaseHelper {
       if (originalId == null || warehouseId == null) throw StateError('حدد فاتورة البيع والمخزن');
       final original = await txn.query('sales_header', where:'id=? AND status=?', whereArgs:[originalId,'مرحل'], limit:1);
       if (original.isEmpty) throw StateError('يجب أن تكون فاتورة البيع الأصلية مرحلة');
+      final originalWarehouseId = (original.first['warehouse_id'] as num?)?.toInt();
+      if (originalWarehouseId == null || warehouseId != originalWarehouseId) {
+        throw StateError('يجب أن يكون مخزن المرتجع هو مخزن فاتورة البيع الأصلية');
+      }
       double total = 0, costTotal = 0;
       final requestedByProduct=<int,double>{};
       for(final line in lines){final id=line['product_id']!.toInt();final q=line['qty']!.toDouble();if(q<=0)throw StateError('كمية المرتجع يجب أن تكون أكبر من صفر');requestedByProduct[id]=(requestedByProduct[id]??0)+q;}
@@ -291,16 +297,18 @@ class DatabaseHelper {
       }
       final originalNet=(original.first['net'] as num?)?.toDouble() ?? 0;
       final originalPaid=(original.first['paid'] as num?)?.toDouble() ?? 0;
-      final customerId=(h['customer_id'] as num?)?.toInt();
+      final customerId=(original.first['customer_id'] as num?)?.toInt();
       final customerRows=customerId==null? <Map<String,Object?>>[] : await txn.query('customers',where:'id=?',whereArgs:[customerId],limit:1);
       final outstanding=(originalNet-originalPaid).clamp(0,double.infinity).toDouble();
       final currentCustomerBalance=customerRows.isEmpty?0.0:((customerRows.first['balance'] as num?)?.toDouble()??0);
       final dueReduction=customerId==null?0.0:total.clamp(0,outstanding.clamp(0,currentCustomerBalance)).toDouble();
       final cashRefund=total-dueReduction;
-      final cashRows = await txn.query('cash_boxes', where:'is_active=1', orderBy:'id', limit:1);
-      if (cashRows.isEmpty) throw StateError('لا يوجد صندوق نقدي نشط');
-      final cashId=(cashRows.first['id'] as num).toInt();
-      if (((cashRows.first['balance'] as num?)?.toDouble() ?? 0) < cashRefund) throw StateError('رصيد الصندوق غير كافٍ لصرف الجزء النقدي من المرتجع');
+      final originalCashBoxId = (original.first['cash_box_id'] as num?)?.toInt();
+      if (originalCashBoxId == null) throw StateError('فاتورة البيع الأصلية لا تحتوي على صندوق تسوية');
+      final cashRows = await txn.query('cash_boxes', where:'id=?', whereArgs:[originalCashBoxId], limit:1);
+      if (cashRows.isEmpty) throw StateError('صندوق فاتورة البيع الأصلية غير موجود');
+      final cashId = originalCashBoxId;
+      if (((cashRows.first['balance'] as num?)?.toDouble() ?? 0) < cashRefund) throw StateError('رصيد صندوق الفاتورة الأصلية غير كافٍ لصرف الجزء النقدي من المرتجع');
       if(cashRefund>0){
         await txn.rawUpdate('UPDATE cash_boxes SET balance=balance-? WHERE id=?',[cashRefund,cashId]);
         await txn.insert('cash_box_transactions', {'cash_box_id':cashId,'type':'مرتجع مبيعات','amount':-cashRefund,'reference':'RETURN-$returnId'});
