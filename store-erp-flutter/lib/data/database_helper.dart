@@ -257,6 +257,8 @@ class DatabaseHelper {
       if (rows.isEmpty) throw StateError('مستند المرتجع غير موجود');
       final h = rows.first;
       if (h['status'] == 'مرحل') throw StateError('المرتجع مرحل مسبقًا');
+      final returnDate = (h['return_date']?.toString() ?? '').substring(0, 10);
+      if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [returnDate], limit: 1)).isNotEmpty) throw StateError('اليوم مقفل ولا يقبل ترحيل مرتجعات جديدة');
       if (lines.isEmpty) throw StateError('أضف أصناف المرتجع');
       final originalId = (h['sales_id'] as num?)?.toInt();
       final warehouseId = (h['warehouse_id'] as num?)?.toInt();
