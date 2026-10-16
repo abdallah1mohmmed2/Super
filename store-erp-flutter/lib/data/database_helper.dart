@@ -43,8 +43,6 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE customers ADD COLUMN manager_approval INTEGER NOT NULL DEFAULT 0');
       }
     }
-  }
-
     if (oldVersion < 5) {
       await db.execute('''CREATE TABLE IF NOT EXISTS document_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type TEXT NOT NULL, document_id INTEGER NOT NULL, payment_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, method TEXT NOT NULL DEFAULT 'نقدي', amount REAL NOT NULL CHECK(amount > 0), reference TEXT, notes TEXT)''');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_document_payments_parent ON document_payments(document_type, document_id)');
