@@ -971,21 +971,41 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _backup() async {
     setState(() => _busy = true);
+    String? createdPath;
     try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folderPath = _backupFolderController.text.trim().isEmpty
+          ? p.join(docs.path, 'StoreERP', 'backups')
+          : _backupFolderController.text.trim();
+      final folder = Directory(folderPath);
+      await folder.create(recursive: true);
       await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
       final source = await DatabaseHelper.instance.databasePath;
-      final dir = await getApplicationDocumentsDirectory();
-      final folder = Directory(p.join(dir.path, 'StoreERP', 'backups')); await folder.create(recursive: true);
-      final path = p.join(folder.path, 'store_${DateTime.now().toIso8601String().replaceAll(':','-')}.db');
-      await File(source).copy(path);
-      
+      final stem = (_backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim())
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_\\-ء-ي]'), '_');
+      createdPath = p.join(folder.path, '${stem}_${DateTime.now().toIso8601String().replaceAll(':','-')}.db');
+      await File(source).copy(createdPath);
+      var status = 'نجاح — دون تحقق';
+      if (_verifyBackup) {
+        final file = File(createdPath);
+        final handle = await file.open();
+        final header = await handle.read(16);
+        await handle.close();
+        if (ascii.decode(header, allowInvalid: true) != 'SQLite format 3\\u0000') {
+          throw StateError('فشل التحقق من ملف النسخة');
+        }
+        status = 'نجاح — تم التحقق من ترويسة SQLite';
+      }
       if (!mounted) return;
-      await context.read<AppProvider>().create('backup_history', {'file_path': path, 'status': 'نجاح'});
-      _message('تم إنشاء نسخة احتياطية: $path');
-    } catch (e) { 
-      _message('فشل إنشاء النسخة الاحتياطية: $e'); 
-    } finally { 
-      if (mounted) setState(() => _busy = false); 
+      await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': status});
+      _message('تم إنشاء النسخة الاحتياطية: $createdPath');
+    } catch (e) {
+      if (createdPath != null) {
+        try { await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': 'فشل: $e'}); } catch (_) {}
+      }
+      _message('فشل إنشاء النسخة الاحتياطية: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
