@@ -19,6 +19,7 @@ import 'yearlycount_screen.dart';
 import 'countreports_screen.dart';
 import 'reports_screen.dart';
 import 'backup_screen.dart';
+import 'approvals_screen.dart';
 import 'closing_screen.dart';
 
 class ModuleScreen extends StatelessWidget {
@@ -34,7 +35,7 @@ class ModuleScreen extends StatelessWidget {
     'countdocs' => const InventoryDocumentsScreen(), 'counts' => const PhysicalCountScreen(),
     'dailycount' => const DailyCountScreen(), 'monthlycount' => const MonthlyCountScreen(),
     'yearlycount' => const YearlyCountScreen(), 'countreports' => const CountReportsScreen(),
-    'reports' => const ReportsScreen(), 'backup' => const BackupScreen(),
+    'reports' => const ReportsScreen(), 'approvals' => const ApprovalsScreen(), 'backup' => const BackupScreen(),
     'closing' => const DailyClosingScreen(), _ => const ProductsScreen(),
   };
 }
