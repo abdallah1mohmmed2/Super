@@ -329,8 +329,19 @@ class DatabaseHelper {
       final customerRows=customerId==null? <Map<String,Object?>>[] : await txn.query('customers',where:'id=?',whereArgs:[customerId],limit:1);
       final outstanding=(originalNet-originalPaid).clamp(0,double.infinity).toDouble();
       final currentCustomerBalance=customerRows.isEmpty?0.0:((customerRows.first['balance'] as num?)?.toDouble()??0);
-      final dueReduction=customerId==null?0.0:total.clamp(0,outstanding.clamp(0,currentCustomerBalance)).toDouble();
-      final cashRefund=total-dueReduction;
+      final settlementRows = await txn.query('document_payments', where:'document_type=? AND document_id=?', whereArgs:['returns', returnId]);
+      final hasExplicitSettlement = settlementRows.isNotEmpty;
+      double dueReduction;
+      double cashRefund;
+      if (hasExplicitSettlement) {
+        dueReduction = settlementRows.where((row) => row['method'] == 'على الرصيد').fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+        cashRefund = settlementRows.where((row) => row['method'] != 'على الرصيد').fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+        if ((dueReduction + cashRefund - total).abs() > 0.005) throw StateError('أكمل تسوية المرتجع؛ يجب أن يساوي مجموع الدفعات إجمالي المرتجع');
+        if (dueReduction > 0 && customerId == null) throw StateError('لا يمكن تحويل مبلغ إلى رصيد عميل دون تحديد العميل');
+      } else {
+        dueReduction=customerId==null?0.0:total.clamp(0,outstanding.clamp(0,currentCustomerBalance)).toDouble();
+        cashRefund=total-dueReduction;
+      }
       final originalCashBoxId = (original.first['cash_box_id'] as num?)?.toInt();
       if (originalCashBoxId == null) throw StateError('فاتورة البيع الأصلية لا تحتوي على صندوق تسوية');
       final cashRows = await txn.query('cash_boxes', where:'id=?', whereArgs:[originalCashBoxId], limit:1);
@@ -341,7 +352,13 @@ class DatabaseHelper {
         await txn.rawUpdate('UPDATE cash_boxes SET balance=balance-? WHERE id=?',[cashRefund,cashId]);
         await txn.insert('cash_box_transactions', {'cash_box_id':cashId,'type':'مرتجع مبيعات','amount':-cashRefund,'reference':'RETURN-$returnId'});
       }
-      if(customerId!=null && dueReduction>0) await txn.rawUpdate('UPDATE customers SET balance=MAX(0,balance-?) WHERE id=?',[dueReduction,customerId]);
+      if(customerId!=null && dueReduction>0) {
+        if (hasExplicitSettlement) {
+          await txn.rawUpdate('UPDATE customers SET balance=balance-? WHERE id=?',[dueReduction,customerId]);
+        } else {
+          await txn.rawUpdate('UPDATE customers SET balance=MAX(0,balance-?) WHERE id=?',[dueReduction,customerId]);
+        }
+      }
       await txn.update('sales_returns', {'status':'مرحل','total':total}, where:'id=?', whereArgs:[returnId]);
       await _createJournal(txn,'SALES_RETURN',returnId,h['return_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'ترحيل مرتجع مبيعات ${h['return_no'] ?? returnId}',[
         ['4100','مردودات المبيعات',total,0],['1000','الصندوق',0,cashRefund],['1200','تخفيض ذمم العميل',0,dueReduction],['1100','المخزون',costTotal,0],['5000','تكلفة البضاعة المباعة',0,costTotal]
