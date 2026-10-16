@@ -723,7 +723,7 @@ class _DataScreenState extends State<DataScreen> {
                                 rows: lineRows.map((r) {
                                   return DataRow(
                                     cells: [
-                                      ...keys.map((k) => DataCell(Text(_displayValue(k, r[k]))),
+                                      ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
                                       DataCell(
                                         IconButton(
                                           tooltip: 'حذف البند',
