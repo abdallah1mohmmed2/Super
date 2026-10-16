@@ -896,6 +896,7 @@ class _DataScreenState extends State<DataScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, 
               children: [
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
                 if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
                 if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
                 if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
@@ -960,6 +961,22 @@ class _DataScreenState extends State<DataScreen> {
                 );
               }
             ),
+          ],
+          
+          if (_selectedId != null && ['sales','purchases'].contains(widget.screenKey)) ...[
+            const SizedBox(height: 12),
+            Builder(builder: (context) {
+              final selectedRows = all.where((row) => row['id'] == _selectedId).toList();
+              final h = selectedRows.isEmpty ? <String,Object?>{} : selectedRows.first;
+              final subtotal = (h['subtotal'] as num?)?.toDouble() ?? 0;
+              final discount = (h['discount'] as num?)?.toDouble() ?? 0;
+              final tax = (h['tax'] as num?)?.toDouble() ?? 0;
+              final net = (h['net'] as num?)?.toDouble() ?? 0;
+              final paid = (h['paid'] as num?)?.toDouble() ?? 0;
+              final remaining = (net - paid).clamp(0, double.infinity).toDouble();
+              Widget metric(String label, double value) => Container(padding: const EdgeInsets.all(12), constraints: const BoxConstraints(minWidth: 130), decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: Theme.of(context).textTheme.labelMedium), const SizedBox(height: 4), Text(value.toStringAsFixed(2), style: Theme.of(context).textTheme.titleMedium)]));
+              return SectionCard(title: 'الملخص المالي', child: Wrap(spacing: 10, runSpacing: 10, children: [metric('الإجمالي', subtotal), metric('الخصم', discount), metric('الضريبة', tax), metric('الصافي', net), metric('المدفوع', paid), metric('المتبقي', remaining)]));
+            }),
           ],
           
           if (_selectedId != null && ['sales','purchases','returns'].contains(widget.screenKey)) ...[
