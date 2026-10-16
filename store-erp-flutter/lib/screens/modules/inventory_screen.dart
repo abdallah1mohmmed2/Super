@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'package:csv/csv.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import '../../data/database_helper.dart';
 
@@ -70,7 +74,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   Widget metric(String title,String value,IconData icon) => SizedBox(width:220,child:Card(child:ListTile(leading:Icon(icon),title:Text(title),subtitle:Text(value,style:const TextStyle(fontSize:19,fontWeight:FontWeight.bold)))));
   @override
   Widget build(BuildContext context) => ListView(padding:const EdgeInsets.all(18),children:[
-    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('طباعة / معاينة'))]),
+    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),FilledButton.icon(onPressed:exportCurrentTab,icon:const Icon(Icons.file_download_outlined),label:const Text('تصدير Excel / CSV')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('طباعة / معاينة'))]),
     const SizedBox(height:12),
     Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:12,runSpacing:12,children:[
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:warehouseId,decoration:const InputDecoration(labelText:'المخزن'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...warehouses.map((w)=>DropdownMenuItem(value:(w['id'] as num).toInt(),child:Text('${w['name']}')))],onChanged:(v)=>setState(()=>warehouseId=v))),
@@ -102,6 +106,42 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       final values=withBatch?[p?['name']??'—',p?['code']??'—',warehouse(r['warehouse_id'])?['name']??'—',r['batch_no']??'—',money(qty),r['expiry_date']??'—']:[p?['name']??'—',p?['code']??'—',category(p?['category_id'])?['name']??'—',warehouse(r['warehouse_id'])?['name']??'—',money(qty),money(cost),money(qty*cost)];
       return DataRow(cells:values.map((v)=>DataCell(Text(v.toString()))).toList());
     }).toList())));
+  }
+
+  Future<void> exportCurrentTab() async {
+    final rows = switch (tabs.index) {
+      1 => lowRows,
+      2 => expiredRows,
+      3 => expiringRows,
+      _ => stockRows,
+    };
+    if (rows.isEmpty) {
+      msg('لا توجد بيانات لتصديرها');
+      return;
+    }
+    final isBatchTab = tabs.index >= 2;
+    final header = isBatchTab
+        ? ['الصنف', 'الكود', 'المخزن', 'الدفعة', 'الكمية', 'تاريخ الانتهاء']
+        : ['الصنف', 'الكود', 'القسم', 'المخزن', 'الرصيد', 'تكلفة الوحدة', 'قيمة الرصيد'];
+    final data = rows.map((row) {
+      final item = product(row['product_id']);
+      if (isBatchTab) {
+        return [item?['name'] ?? '', item?['code'] ?? '', warehouse(row['warehouse_id'])?['name'] ?? '', row['batch_no'] ?? '', row['qty'] ?? 0, row['expiry_date'] ?? ''];
+      }
+      final qty = numv(row['qty']);
+      final cost = numv(item?['cost_price']);
+      return [item?['name'] ?? '', item?['code'] ?? '', category(item?['category_id'])?['name'] ?? '', warehouse(row['warehouse_id'])?['name'] ?? '', qty, cost, qty * cost];
+    }).toList();
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
+      await folder.create(recursive: true);
+      final file = File(p.join(folder.path, 'inventory_${DateTime.now().millisecondsSinceEpoch}.csv'));
+      await file.writeAsString('\uFEFF${const ListToCsvConverter().convert([header, ...data])}', flush: true);
+      msg('تم التصدير بصيغة CSV المتوافقة مع Excel: ${file.path}');
+    } catch (e) {
+      msg('تعذر تصدير المخزون: $e');
+    }
   }
 
   Future<void> showPrintPreview() async {
