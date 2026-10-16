@@ -194,9 +194,9 @@ class DatabaseHelper {
       if (lines.isEmpty) throw StateError('أضف صنفًا واحدًا على الأقل');
       if (net < 0 || paid < 0 || paid > net) throw StateError('تحقق من صافي الفاتورة والمدفوع');
       for (final line in lines) {
-        final productId = line['product_id']!.toInt();
+        final productId = (line['product_id'] as num).toInt();
         final factor = (line['factor'] as num?)?.toDouble() ?? 1;
-        final qty = line['qty']!.toDouble() * factor;
+        final qty = (line['qty'] as num).toDouble() * factor;
         if (factor <= 0 || qty <= 0) throw StateError('الكمية ومعامل تحويل الوحدة يجب أن يكونا أكبر من صفر');
         final cost = ((line['cost'] as num?)?.toDouble() ?? 0);
         if (cost < 0) throw StateError('التكلفة لا يمكن أن تكون سالبة');
