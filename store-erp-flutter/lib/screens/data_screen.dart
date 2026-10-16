@@ -29,10 +29,95 @@ class _DataScreenState extends State<DataScreen> {
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
   static const _numericFields = {'cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
-  @override 
+  final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
+
+  static const _referenceFields = <String, (String, String)>{
+    'category_id': ('categories', 'name'),
+    'product_id': ('products', 'name'),
+    'warehouse_id': ('warehouses', 'name'),
+    'cash_box_id': ('cash_boxes', 'name'),
+    'customer_id': ('customers', 'name'),
+    'supplier_id': ('suppliers', 'name'),
+    'sales_id': ('sales_header', 'invoice_no'),
+    'from_warehouse_id': ('warehouses', 'name'),
+    'to_warehouse_id': ('warehouses', 'name'),
+    'from_cashbox_id': ('cash_boxes', 'name'),
+    'to_cashbox_id': ('cash_boxes', 'name'),
+    'document_id': ('inventory_documents', 'document_no'),
+  };
+
+  @override
   void initState() {
     super.initState();
-    _initControllers(); 
+    _initControllers();
+    _loadReferenceOptions();
+  }
+
+  Future<void> _loadReferenceOptions() async {
+    try {
+      final loaded = <String, List<Map<String, Object?>>>{};
+      for (final entry in _referenceFields.entries) {
+        loaded[entry.key] = await DatabaseHelper.instance.query(
+          entry.value.$1,
+          orderBy: entry.value.$2,
+        );
+      }
+      if (!mounted) return;
+      setState(() => _referenceOptions
+        ..clear()
+        ..addAll(loaded));
+    } catch (_) {
+      // Keep the form usable if a reference table is unavailable.
+    }
+  }
+
+  Widget _fieldInput(String field, double width) {
+    final reference = _referenceFields[field];
+    final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+    if (reference != null && options.isNotEmpty) {
+      final selected = int.tryParse(_controllers[field]!.text);
+      final selectedValue = options.any((row) => (row['id'] as num?)?.toInt() == selected)
+          ? selected
+          : null;
+      return SizedBox(
+        width: width,
+        child: DropdownButtonFormField<int>(
+          value: selectedValue,
+          isExpanded: true,
+          decoration: InputDecoration(
+            labelText: fieldLabel(field),
+            prefixIcon: Icon(_icon(field)),
+          ),
+          hint: const Text('اختر من القائمة'),
+          items: options.map((row) {
+            final id = (row['id'] as num).toInt();
+            final label = (row[reference.$2] ?? 'بدون اسم').toString();
+            return DropdownMenuItem<int>(
+              value: id,
+              child: Text('$label  (#$id)', overflow: TextOverflow.ellipsis),
+            );
+          }).toList(),
+          onChanged: (value) {
+            _controllers[field]!.text = value?.toString() ?? '';
+            setState(() {});
+          },
+        ),
+      );
+    }
+    return SizedBox(
+      width: width,
+      child: TextField(
+        controller: _controllers[field],
+        obscureText: field == 'password_hash',
+        decoration: InputDecoration(
+          labelText: field == 'password_hash' && _selectedId != null
+              ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)'
+              : fieldLabel(field),
+          prefixIcon: Icon(_icon(field)),
+          hintText: _numericFields.contains(field) ? 'أدخل رقمًا' : null,
+        ),
+      ),
+    );
   }
 
   @override
@@ -515,7 +600,18 @@ class _DataScreenState extends State<DataScreen> {
               children: [
                 if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود. قبل الترحيل يتم التحقق من الرصيد وتسجيل حركة المخزون والقيد المحاسبي داخل معاملة ذرية.', style: TextStyle(color: Colors.deepOrange))),
                 if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
-                if (!_readOnly) Wrap(spacing: 12, runSpacing: 12, children: config.fields.map((field) => SizedBox(width: MediaQuery.sizeOf(context).width > 1050 ? 240 : MediaQuery.sizeOf(context).width * .72, child: TextField(controller: _controllers[field], obscureText: field == 'password_hash', decoration: InputDecoration(labelText: field == 'password_hash' && _selectedId != null ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)' : fieldLabel(field), prefixIcon: Icon(_icon(field)), hintText: _numericFields.contains(field) ? 'أدخل رقمًا' : null)))).toList()),
+                if (!_readOnly) Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: config.fields
+                      .map((field) => _fieldInput(
+                            field,
+                            MediaQuery.sizeOf(context).width > 1050
+                                ? 240
+                                : MediaQuery.sizeOf(context).width * .72,
+                          ))
+                      .toList(),
+                ),
                 if (_selectedId != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text('وضع التعديل — السجل رقم $_selectedId', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
               ]
             )
