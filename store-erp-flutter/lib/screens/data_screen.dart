@@ -173,6 +173,8 @@ class _DataScreenState extends State<DataScreen> {
       for (final controller in _controllers.values) { controller.dispose(); }
       _controllers.clear();
       _initControllers();
+      _referencesLoading = true;
+      _loadReferenceOptions();
     }
   }
 
@@ -293,6 +295,7 @@ class _DataScreenState extends State<DataScreen> {
     if (config.table == 'users') {
       final password = _controllers['password_hash']!.text;
       final confirmation = _controllers['confirm_password']!.text;
+      if (password.isNotEmpty && password.length < 6) { _message('يجب ألا تقل كلمة المرور عن 6 أحرف'); return; }
       if (password.isNotEmpty && password != confirmation) { _message('كلمة المرور وتأكيدها غير متطابقين'); return; }
       if (_selectedId == null && confirmation.isEmpty) { _message('يرجى تأكيد كلمة المرور'); return; }
     }
