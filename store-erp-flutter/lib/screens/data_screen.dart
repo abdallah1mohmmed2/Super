@@ -891,7 +891,8 @@ class _DataScreenState extends State<DataScreen> {
     setState(() => _selectedId = row['id'] as int?); 
     for (final field in config.fields) { 
       _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
-    } 
+    }
+    if (widget.screenKey == 'backup') _restorePathController.text = (row['file_path'] ?? '').toString();
   }
   
   void _clear() { 
@@ -1038,7 +1039,7 @@ class _DataScreenState extends State<DataScreen> {
       final target=await DatabaseHelper.instance.databasePath;
       await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
       final docs=await getApplicationDocumentsDirectory();
-      final safetyDir=Directory(p.join(docs.path,'StoreERP','backups'));
+      final safetyDir=Directory(_backupFolderController.text.trim().isEmpty ? p.join(docs.path,'StoreERP','backups') : _backupFolderController.text.trim());
       await safetyDir.create(recursive:true);
       if (_safetyCopyBeforeRestore) await File(target).copy(p.join(safetyDir.path,'pre_restore_${DateTime.now().millisecondsSinceEpoch}.db'));
       await DatabaseHelper.instance.close();
