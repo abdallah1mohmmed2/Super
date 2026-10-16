@@ -1141,6 +1141,54 @@ class _DataScreenState extends State<DataScreen> {
             )
           ),
           
+          if (widget.screenKey == 'backup') ...[
+            const SizedBox(height: 12),
+            SectionCard(
+              title: 'إعدادات النسخ الاحتياطي والاسترجاع',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('قاعدة البيانات محلية بصيغة SQLite؛ النسخ اليومي لا يعمل عندما يكون التطبيق مغلقًا.'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      SizedBox(width: 420, child: TextField(controller: _backupFolderController, decoration: const InputDecoration(labelText: 'مجلد الحفظ الافتراضي'))),
+                      ActionButton('استعراض المجلد', icon: Icons.folder_open, onPressed: () => _editBackupPath(restore: false)),
+                      SizedBox(width: 280, child: TextField(controller: _backupNameController, decoration: const InputDecoration(labelText: 'اسم ملف النسخة'))),
+                      ActionButton('حفظ الإعدادات', icon: Icons.save_outlined, onPressed: _saveBackupSettings),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: _verifyBackup,
+                    onChanged: (value) => setState(() => _verifyBackup = value ?? true),
+                    title: const Text('التحقق من ملف النسخة بعد الإنشاء'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    value: _safetyCopyBeforeRestore,
+                    onChanged: (value) => setState(() => _safetyCopyBeforeRestore = value ?? true),
+                    title: const Text('إنشاء نسخة أمان قبل الاسترجاع'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionButton('اختيار ملف الاسترجاع', icon: Icons.folder_open, onPressed: () => _editBackupPath(restore: true)),
+                      ActionButton('بدء الاسترجاع', icon: Icons.settings_backup_restore, onPressed: _restoreBackup),
+                    ],
+                  ),
+                  if (_restorePathController.text.isNotEmpty)
+                    Padding(padding: const EdgeInsets.only(top: 8), child: SelectableText('ملف الاسترجاع المحدد: ${_restorePathController.text}')),
+                ],
+              ),
+            ),
+          ],
           if (_selectedId != null && _lineTable != null) ...[
             const SizedBox(height: 12),
             FutureBuilder<List<Map<String,Object?>>>(
