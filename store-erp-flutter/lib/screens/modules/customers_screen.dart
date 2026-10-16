@@ -7,7 +7,7 @@ class _CustomersScreenState extends State<CustomersScreen>{
  final db=DatabaseHelper.instance, search=TextEditingController();
  final fields={for(final f in ['name','code','phone','mobile','address','credit_limit','balance'])f:TextEditingController()};
  List<Map<String,Object?>> customers=[];
- int? selectedId; String filter=''; bool active=true,suspended=false,managerApproval=false,busy=false,editing=false;
+ int? selectedId; String filter=''; bool active=true,suspended=false,managerApproval=false,busy=false,editing=true;
  @override void initState(){super.initState();reload();}
  @override void dispose(){search.dispose();for(final c in fields.values)c.dispose();super.dispose();}
  void msg(String s){if(mounted)ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s)));}
