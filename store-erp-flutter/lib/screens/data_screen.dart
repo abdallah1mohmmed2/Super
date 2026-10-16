@@ -545,6 +545,73 @@ class _DataScreenState extends State<DataScreen> {
     await DatabaseHelper.instance.update(table, {'paid': paid}, where: 'id=?', whereArgs: [_selectedId]);
   }
 
+  Future<void> _loadOriginalInvoice() async {
+    if (widget.screenKey != 'returns' || _selectedId == null) { _message('احفظ رأس المرتجع وحدده أولاً'); return; }
+    final returns = await DatabaseHelper.instance.query('sales_returns', where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (returns.isEmpty || returns.first['status'] == 'مرحل') { _message('المرتجع غير موجود أو مرحل بالفعل'); return; }
+    final salesId = (returns.first['sales_id'] as num?)?.toInt();
+    if (salesId == null) { _message('اختر الفاتورة الأصلية من حقل «معرف فاتورة البيع» أولاً'); return; }
+    final saleHeaders = await DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [salesId], limit: 1);
+    final soldLines = await DatabaseHelper.instance.query('sales_lines', where: 'sales_id=?', whereArgs: [salesId], orderBy: 'id');
+    if (soldLines.isEmpty) { _message('الفاتورة الأصلية لا تحتوي على أصناف'); return; }
+    final allReturns = await DatabaseHelper.instance.query('sales_returns', where: 'sales_id=? AND status=?', whereArgs: [salesId, 'مرحل']);
+    final alreadyReturned = <int,double>{};
+    for (final ret in allReturns) {
+      final lines = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=?', whereArgs: [ret['id']]);
+      for (final line in lines) {
+        final pid = (line['product_id'] as num).toInt();
+        alreadyReturned[pid] = (alreadyReturned[pid] ?? 0) + ((line['qty'] as num?)?.toDouble() ?? 0);
+      }
+    }
+    final products = await DatabaseHelper.instance.query('products');
+    int? lineId = (soldLines.first['id'] as num).toInt();
+    final qtyController = TextEditingController(text: '1');
+    String condition = 'سليم';
+    if (!mounted) { qtyController.dispose(); return; }
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) {
+      final selectedLine = soldLines.firstWhere((line) => (line['id'] as num).toInt() == lineId);
+      final pid = (selectedLine['product_id'] as num).toInt();
+      final soldQty = (selectedLine['qty'] as num?)?.toDouble() ?? 0;
+      final remaining = (soldQty - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble();
+      return AlertDialog(
+        title: Text('استدعاء الفاتورة الأصلية ${saleHeaders.first['invoice_no'] ?? salesId}'),
+        content: SizedBox(width: 540, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<int>(initialValue: lineId, isExpanded: true, decoration: const InputDecoration(labelText: 'الصنف المباع'), items: soldLines.map((line) {
+            final id = (line['id'] as num).toInt();
+            final productId = (line['product_id'] as num).toInt();
+            final name = products.where((p) => (p['id'] as num?)?.toInt() == productId).map((p) => p['name'] ?? 'صنف').firstWhere((_) => true, orElse: () => 'صنف');
+            final qty = (line['qty'] as num?)?.toDouble() ?? 0;
+            return DropdownMenuItem<int>(value: id, child: Text('${name} — المباع: ${qty}'));
+          }).toList(), onChanged: (v) => setDialogState(() { lineId = v; qtyController.text = '1'; })),
+          const SizedBox(height: 10),
+          Align(alignment: Alignment.centerRight, child: Text('الكمية المتبقية للإرجاع لهذا الصنف: ${remaining}')),
+          TextField(controller: qtyController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية المرتجعة')),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(initialValue: condition, decoration: const InputDecoration(labelText: 'حالة الصنف'), items: const ['سليم','تالف','غير قابل للبيع'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => condition = v ?? 'سليم')),
+        ])),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إضافة إلى المرتجع'))],
+      );
+    }));
+    if (ok != true || !mounted || lineId == null) { qtyController.dispose(); return; }
+    try {
+      final line = soldLines.firstWhere((row) => (row['id'] as num).toInt() == lineId);
+      final pid = (line['product_id'] as num).toInt();
+      final qty = double.tryParse(qtyController.text.trim());
+      final soldQty = (line['qty'] as num?)?.toDouble() ?? 0;
+      final remaining = (soldQty - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble();
+      if (qty == null || qty <= 0 || qty > remaining) throw StateError('الكمية يجب أن تكون أكبر من صفر وألا تتجاوز الكمية المباعة المتبقية (${remaining})');
+      final exists = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=? AND product_id=?', whereArgs: [_selectedId, pid]);
+      if (exists.isNotEmpty) throw StateError('هذا الصنف موجود بالفعل في المرتجع الحالي؛ احذف السطر أو عدّله قبل الإضافة مرة أخرى');
+      final price = (line['price'] as num?)?.toDouble() ?? 0;
+      await DatabaseHelper.instance.insert('sales_return_lines', {'return_id': _selectedId, 'product_id': pid, 'qty': qty, 'price': price, 'condition': condition});
+      final current = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=?', whereArgs: [_selectedId]);
+      final total = current.fold<double>(0, (sum, row) => sum + (((row['qty'] as num?)?.toDouble() ?? 0) * ((row['price'] as num?)?.toDouble() ?? 0)));
+      await DatabaseHelper.instance.update('sales_returns', {'total': total}, where: 'id=?', whereArgs: [_selectedId]);
+      if (mounted) { await context.read<AppProvider>().refresh(); _message('تمت إضافة الصنف من الفاتورة الأصلية'); setState(() {}); }
+    } catch (e) { _message('تعذر استدعاء الصنف: $e'); }
+    qtyController.dispose();
+  }
+
   Future<void> _addPayment() async {
     if (_selectedId == null || !['sales','purchases','returns'].contains(widget.screenKey)) { _message('احفظ المستند وحدده أولاً'); return; }
     final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
@@ -823,6 +890,7 @@ class _DataScreenState extends State<DataScreen> {
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('طباعة / معاينة', icon: Icons.print_outlined, onPressed: _printSelected),
               if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
+              if (widget.screenKey == 'returns' && _selectedId != null) ActionButton('استدعاء الفاتورة الأصلية', icon: Icons.receipt_long_outlined, onPressed: _loadOriginalInvoice),
               if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
             ]), 
             child: Column(
