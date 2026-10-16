@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -7,6 +8,22 @@ class DatabaseHelper {
   static final DatabaseHelper instance = DatabaseHelper._();
   Database? _db;
   Future<Database> get database async => _db ??= await _open();
+
+  @visibleForTesting
+  Future<void> openInMemoryForTesting() async {
+    await _db?.close();
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    _db = await databaseFactory.openDatabase(
+      inMemoryDatabasePath,
+      options: OpenDatabaseOptions(
+        version: 7,
+        onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
+        onCreate: _onCreate,
+        onUpgrade: _onUpgrade,
+      ),
+    );
+  }
 
   Future<Database> _open() async {
     sqfliteFfiInit();
