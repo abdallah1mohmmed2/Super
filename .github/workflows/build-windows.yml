@@ -56,6 +56,12 @@ jobs:
           flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
           if ($LASTEXITCODE -ne 0) { throw "Flutter analysis found errors; see diagnostics above." }
 
+      - name: Run Flutter widget tests
+        shell: pwsh
+        run: |
+          flutter test --no-pub
+          if ($LASTEXITCODE -ne 0) { throw "Flutter widget tests failed." }
+
       - name: Build Windows release
         shell: pwsh
         run: |
