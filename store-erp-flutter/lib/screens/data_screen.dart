@@ -84,7 +84,8 @@ class _DataScreenState extends State<DataScreen> {
       for (final entry in _referenceFields.entries) {
         String? where;
         if (entry.key == 'cash_session_id') {
-          where = "status='مفتوحة'";
+          final boxId = int.tryParse(_controllers['cash_box_id']?.text ?? '') ?? -1;
+          where = "status='مفتوحة' AND cash_box_id=$boxId";
         } else if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
@@ -209,6 +210,10 @@ class _DataScreenState extends State<DataScreen> {
               ? null
               : (value) {
                   _controllers[field]!.text = value?.toString() ?? '';
+                  if (field == 'cash_box_id' && widget.screenKey == 'sales') {
+                    _controllers['cash_session_id']?.clear();
+                    _loadReferenceOptions();
+                  }
                   setState(() {});
                 },
         ),
