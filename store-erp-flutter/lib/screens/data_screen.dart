@@ -140,8 +140,9 @@ class _DataScreenState extends State<DataScreen> {
     return SizedBox(
       width: width,
       child: TextField(
+        readOnly: widget.screenKey == 'suppliers' && field == 'balance',
         controller: _controllers[field],
-        obscureText: field == 'password_hash',
+        obscureText: field == 'password_hash' || field == 'confirm_password',
         decoration: InputDecoration(
           labelText: field == 'password_hash' && _selectedId != null
               ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)'
@@ -260,6 +261,8 @@ class _DataScreenState extends State<DataScreen> {
     }
     final data = <String,Object?>{};
     for (final field in config.fields) {
+      if (field == 'confirm_password') continue; // UI-only confirmation; never stored.
+      if (widget.screenKey == 'suppliers' && field == 'balance') continue; // Ledger-derived balance.
       final raw = _controllers[field]!.text.trim();
       if (raw.isEmpty) continue;
       if (_numericFields.contains(field)) {
@@ -274,6 +277,12 @@ class _DataScreenState extends State<DataScreen> {
     
     if (config.table == 'users' && _selectedId == null && (data['password_hash'] == null || data['password_hash'].toString().isEmpty)) {
       _message('كلمة المرور مطلوبة للمستخدم الجديد'); return;
+    }
+    if (config.table == 'users') {
+      final password = _controllers['password_hash']!.text;
+      final confirmation = _controllers['confirm_password']!.text;
+      if (password.isNotEmpty && password != confirmation) { _message('كلمة المرور وتأكيدها غير متطابقين'); return; }
+      if (_selectedId == null && confirmation.isEmpty) { _message('يرجى تأكيد كلمة المرور'); return; }
     }
     if (config.table == 'users' && data['password_hash'] != null && data['password_hash'].toString().isNotEmpty) {
       data['password_hash'] = sha256.convert(utf8.encode(data['password_hash'].toString())).toString();
@@ -505,7 +514,60 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  Future<void> _resetUserPassword() async {
+    if (widget.screenKey != 'users' || _selectedId == null) return;
+    final password = TextEditingController();
+    final confirm = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('إعادة تعيين كلمة المرور'),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة المرور الجديدة')),
+        const SizedBox(height: 12),
+        TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'تأكيد كلمة المرور')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد'))],
+    ));
+    if (ok != true || !mounted) { password.dispose(); confirm.dispose(); return; }
+    if (password.text.trim().length < 6 || password.text != confirm.text) { _message('كلمتا المرور يجب أن تتطابقا وألا تقل كلمة المرور عن 6 أحرف'); password.dispose(); confirm.dispose(); return; }
+    try {
+      final hash = sha256.convert(utf8.encode(password.text)).toString();
+      await DatabaseHelper.instance.update('users', {'password_hash': hash}, where: 'id = ?', whereArgs: [_selectedId]);
+      _message('تمت إعادة تعيين كلمة المرور');
+    } catch (e) { _message('تعذرت إعادة تعيين كلمة المرور: $e'); }
+    password.dispose(); confirm.dispose();
+  }
+
+  Future<void> _printSelected() async {
+    if (_selectedId == null) { _message('حدد فاتورة من الجدول أولاً'); return; }
+    final rows = await DatabaseHelper.instance.query(config.table, where: 'id = ?', whereArgs: [_selectedId], limit: 1);
+    if (rows.isEmpty || !mounted) return;
+    final header = rows.first;
+    final lineTable = _lineTable;
+    final lines = lineTable == null ? <Map<String,Object?>>[] : await DatabaseHelper.instance.query(lineTable, where: '$_lineParent = ?', whereArgs: [_selectedId]);
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: Text('معاينة ${config.title} — ${header['invoice_no'] ?? header['return_no'] ?? _selectedId}'),
+      content: SizedBox(width: 620, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('التاريخ: ${header['invoice_date'] ?? header['return_date'] ?? '—'}'),
+        Text('الحالة: ${header['status'] ?? 'مسودة'}'),
+        const Divider(),
+        if (lines.isEmpty) const Text('لا توجد بنود للعرض.') else ...lines.map((line) => Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('الصنف #${line['product_id'] ?? '—'} | الكمية: ${line['qty'] ?? '—'} | السعر: ${line['price'] ?? line['cost'] ?? '—'} | الإجمالي: ${line['line_total'] ?? '—'}'))),
+        const Divider(),
+        Text('الإجمالي: ${header['subtotal'] ?? header['total'] ?? 0}'),
+        Text('الخصم: ${header['discount'] ?? 0}   الضريبة: ${header['tax'] ?? 0}'),
+        Text('الصافي: ${header['net'] ?? header['total'] ?? 0}   المدفوع: ${header['paid'] ?? 0}'),
+      ]))),
+      actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))],
+    ));
+  }
+
   Future<void> _delete(Map<String,Object?> row) async {
+    if (widget.screenKey == 'users') {
+      final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تعطيل المستخدم'), content: const Text('سيتم تعطيل المستخدم منطقيًا مع الاحتفاظ بسجله. هل تريد المتابعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تعطيل'))]));
+      if (yes != true || !mounted) return;
+      try { await DatabaseHelper.instance.update('users', {'is_active': 0}, where: 'id = ?', whereArgs: [row['id']]); if (_selectedId == row['id']) _clear(); await context.read<AppProvider>().refresh(); _message('تم تعطيل المستخدم دون حذف سجله'); } catch (e) { _message('تعذر تعطيل المستخدم: $e'); }
+      return;
+    }
     if (_readOnly) { _message('لا يمكن حذف رصيد المخزون مباشرة؛ استخدم مستند حركة معتمدًا'); return; }
     if (row['status'] == 'مرحل') { _message('لا يمكن حذف مستند مرحل؛ استخدم إجراء عكسي موثق'); return; }
     final id = row['id']; if (id is! int) return;
@@ -525,7 +587,7 @@ class _DataScreenState extends State<DataScreen> {
   void _select(Map<String,Object?> row) { 
     setState(() => _selectedId = row['id'] as int?); 
     for (final field in config.fields) { 
-      _controllers[field]!.text = field == 'password_hash' ? '' : (row[field] ?? '').toString(); 
+      _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
     } 
   }
   
@@ -670,13 +732,18 @@ class _DataScreenState extends State<DataScreen> {
               if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
               if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
-              if (!_readOnly) ActionButton('حفظ', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
+              if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
+              if (widget.screenKey == 'users' && _selectedId != null) ActionButton('إعادة تعيين كلمة المرور', icon: Icons.password, onPressed: _resetUserPassword),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('طباعة / معاينة', icon: Icons.print_outlined, onPressed: _printSelected),
+              if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
             ]), 
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, 
               children: [
-                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود. قبل الترحيل يتم التحقق من الرصيد وتسجيل حركة المخزون والقيد المحاسبي داخل معاملة ذرية.', style: TextStyle(color: Colors.deepOrange))),
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
+                if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
                 if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
                 if (!_readOnly) Wrap(
                   spacing: 12,
