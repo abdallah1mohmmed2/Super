@@ -420,7 +420,7 @@ class _DataScreenState extends State<DataScreen> {
       final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'').toString()).firstWhere((name)=>name.isNotEmpty, orElse:()=>(selectedProduct['unit']??'قطعة').toString());
       if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'production_date':production.isEmpty?null:production,'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
-      if (isReturn) values.addAll({'price':price,'condition':returnCondition});
+      if (isReturn) values.addAll({'qty':qty*unitFactor,'price':price/unitFactor,'condition':returnCondition});
       if (isTransfer) values.addAll({'factor':1,'unit':'قطعة'});
       if (isDamage) { final prod=products.firstWhere((x)=>(x['id'] as num).toInt()==productId); values['estimated_cost']=((prod['cost_price'] as num?)?.toDouble() ?? 0); }
       if (isCountDoc) { final prod=products.firstWhere((x)=>(x['id'] as num).toInt()==productId); values['difference_cost']=(qty-((values['book_qty'] as num?)?.toDouble()??0))*((prod['cost_price'] as num?)?.toDouble()??0); }
@@ -512,7 +512,7 @@ class _DataScreenState extends State<DataScreen> {
           throw StateError('حدد المخزن والصندوق والمورد في رأس فاتورة المشتريات قبل الترحيل');
         }
         final lines = await db.query('purchases_lines', where:'purchase_id=?', whereArgs:[_selectedId]);
-        await db.postPurchase(purchaseId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, supplierId:(header['supplier_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1),'cost':(r['cost'] as num).toDouble()}).toList());
+        await db.postPurchase(purchaseId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, supplierId:(header['supplier_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=> <String,Object?>{'product_id':r['product_id'],'qty':r['qty'],'factor':r['factor'] ?? 1,'cost':r['cost'],'batch_no':r['batch_no'],'production_date':r['production_date'],'expiry_date':r['expiry_date']}).toList());
       } else if (widget.screenKey == 'transfers') {
         if (header['from_warehouse_id'] == null || header['to_warehouse_id'] == null) {
           throw StateError('حدد المخزن المصدر والمخزن المستلم قبل الترحيل');
