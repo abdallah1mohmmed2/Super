@@ -97,6 +97,45 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'roles') {
+      const roles = ['مدير نظام', 'مدير', 'محاسب', 'كاشير', 'مخزن'];
+      final selected = _controllers[field]!.text
+          .split(',')
+          .map((role) => role.trim())
+          .where((role) => role.isNotEmpty)
+          .toSet();
+      return SizedBox(
+        width: width,
+        child: InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'الأدوار والصلاحيات',
+            prefixIcon: Icon(Icons.admin_panel_settings_outlined),
+            border: OutlineInputBorder(),
+          ),
+          child: Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: roles.map((role) {
+              return FilterChip(
+                label: Text(role),
+                selected: selected.contains(role),
+                onSelected: (checked) {
+                  if (checked) {
+                    selected.add(role);
+                  } else {
+                    selected.remove(role);
+                  }
+                  _controllers[field]!.text = roles
+                      .where(selected.contains)
+                      .join(', ');
+                  setState(() {});
+                },
+              );
+            }).toList(),
+          ),
+        ),
+      );
+    }
     final choices = _choiceFields[field];
     if (choices != null) {
       final current = _controllers[field]!.text;
