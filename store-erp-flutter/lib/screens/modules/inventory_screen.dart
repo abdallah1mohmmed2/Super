@@ -76,7 +76,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:warehouseId,decoration:const InputDecoration(labelText:'المخزن'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...warehouses.map((w)=>DropdownMenuItem(value:(w['id'] as num).toInt(),child:Text('${w['name']}')))],onChanged:(v)=>setState(()=>warehouseId=v))),
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:categoryId,decoration:const InputDecoration(labelText:'القسم'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل الأقسام')),...categories.map((c)=>DropdownMenuItem(value:(c['id'] as num).toInt(),child:Text('${c['name']}')))],onChanged:(v)=>setState(()=>categoryId=v))),
       SizedBox(width:300,child:TextField(controller:search,decoration:const InputDecoration(labelText:'بحث بالاسم أو الكود أو الدفعة',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>filter=v.trim()))),
-      OutlinedButton(onPressed:()=>setState(()=>{filter='',warehouseId=null,categoryId=null,search.clear()}),child:const Text('مسح الفلاتر')),
+      OutlinedButton(onPressed:()=>setState(() { filter=''; warehouseId=null; categoryId=null; search.clear(); }),child:const Text('مسح الفلاتر')),
     ]))),
     Wrap(spacing:8,runSpacing:8,children:[
       metric('إجمالي قيمة المخزون',money(stockValue),Icons.payments_outlined),
