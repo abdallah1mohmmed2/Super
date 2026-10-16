@@ -1010,7 +1010,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _restoreBackup() async {
-    final controller = TextEditingController();
+    final controller = TextEditingController(text: _restorePathController.text);
     final path = await showDialog<String>(context:context, builder:(ctx)=>AlertDialog(
       title:const Text('استعادة نسخة احتياطية'),
       content:SizedBox(width:500, child:TextField(controller:controller, decoration:const InputDecoration(labelText:'المسار الكامل لملف .db', hintText:r'C:\Users\User\Documents\StoreERP\backups\store.db'))),
@@ -1026,6 +1026,7 @@ class _DataScreenState extends State<DataScreen> {
     ));
     
     if (confirmed != true || !mounted) { controller.dispose(); return; }
+    _restorePathController.text = path;
     setState(()=>_busy=true);
     
     try {
@@ -1039,7 +1040,7 @@ class _DataScreenState extends State<DataScreen> {
       final docs=await getApplicationDocumentsDirectory();
       final safetyDir=Directory(p.join(docs.path,'StoreERP','backups'));
       await safetyDir.create(recursive:true);
-      await File(target).copy(p.join(safetyDir.path,'pre_restore_${DateTime.now().millisecondsSinceEpoch}.db'));
+      if (_safetyCopyBeforeRestore) await File(target).copy(p.join(safetyDir.path,'pre_restore_${DateTime.now().millisecondsSinceEpoch}.db'));
       await DatabaseHelper.instance.close();
       for (final suffix in ['-wal','-shm']) { final sidecar=File('$target$suffix'); if(await sidecar.exists()) await sidecar.delete(); }
       await source.copy(target);
