@@ -140,8 +140,8 @@ class DatabaseHelper {
       if (net < 0 || paid < 0 || paid > net) throw StateError('تحقق من الصافي والمبلغ المدفوع');
       double costTotal = 0;
       for (final line in lines) {
-        final productId = line['product_id']!.toInt();
-        final qty = line['qty']!.toDouble() * (line['factor'] ?? 1);
+        final productId = (line['product_id'] as num).toInt();
+        final qty = (line['qty'] as num).toDouble() * ((line['factor'] as num?)?.toDouble() ?? 1);
         if (qty <= 0) throw StateError('كمية الصنف يجب أن تكون أكبر من صفر');
         final products = await txn.query('products', where: 'id=? AND is_active=1', whereArgs: [productId], limit: 1);
         if (products.isEmpty) throw StateError('الصنف غير موجود أو غير نشط: $productId');
@@ -182,7 +182,7 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> postPurchase({required int purchaseId, required int warehouseId, required int cashBoxId, required List<Map<String, num>> lines, required double net, required double paid, int? supplierId}) async {
+  Future<void> postPurchase({required int purchaseId, required int warehouseId, required int cashBoxId, required List<Map<String, Object?>> lines, required double net, required double paid, int? supplierId}) async {
     final db = await database;
     await db.transaction((txn) async {
       final rows = await txn.query('purchases_header', where:'id=?', whereArgs:[purchaseId], limit:1);
@@ -197,7 +197,7 @@ class DatabaseHelper {
         final productId = line['product_id']!.toInt();
         final qty = line['qty']!.toDouble() * (line['factor'] ?? 1);
         if (qty <= 0) throw StateError('كمية المشتريات يجب أن تكون أكبر من صفر');
-        final cost = (line['cost'] ?? 0).toDouble();
+        final cost = ((line['cost'] as num?)?.toDouble() ?? 0);
         if (cost < 0) throw StateError('التكلفة لا يمكن أن تكون سالبة');
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
         if (products.isEmpty) throw StateError('الصنف غير موجود: $productId');
@@ -209,6 +209,28 @@ class DatabaseHelper {
           await txn.update('inventory', {'qty':oldQty+qty}, where:'id=?', whereArgs:[inventory.first['id']]);
         }
         await txn.update('products', {'cost_price':cost}, where:'id=?', whereArgs:[productId]);
+        final batchNo = (line['batch_no'] ?? '').toString().trim();
+        final expiryDate = (line['expiry_date'] ?? '').toString().trim();
+        if (batchNo.isNotEmpty || expiryDate.isNotEmpty) {
+          final batches = await txn.query(
+            'product_batches',
+            where: 'product_id=? AND warehouse_id=? AND COALESCE(batch_no, \'\')=?',
+            whereArgs: [productId, warehouseId, batchNo],
+          );
+          final existingBatch = batches.where((batch) => (batch['expiry_date'] ?? '').toString() == expiryDate).toList();
+          if (existingBatch.isNotEmpty) {
+            final oldBatchQty = (existingBatch.first['qty'] as num?)?.toDouble() ?? 0;
+            await txn.update('product_batches', {'qty': oldBatchQty + qty}, where: 'id=?', whereArgs: [existingBatch.first['id']]);
+          } else {
+            await txn.insert('product_batches', {
+              'product_id': productId,
+              'warehouse_id': warehouseId,
+              'batch_no': batchNo.isEmpty ? null : batchNo,
+              'expiry_date': expiryDate.isEmpty ? null : expiryDate,
+              'qty': qty,
+            });
+          }
+        }
       }
       await txn.update('purchases_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'supplier_id':supplierId}, where:'id=?', whereArgs:[purchaseId]);
       if (paid > 0) {
