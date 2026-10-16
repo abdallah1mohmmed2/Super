@@ -575,8 +575,10 @@ class _DataScreenState extends State<DataScreen> {
     final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) {
       final selectedLine = soldLines.firstWhere((line) => (line['id'] as num).toInt() == lineId);
       final pid = (selectedLine['product_id'] as num).toInt();
-      final soldQty = (selectedLine['qty'] as num?)?.toDouble() ?? 0;
-      final remaining = (soldQty - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble();
+      final factor = ((selectedLine['factor'] as num?)?.toDouble() ?? 1).clamp(0.000001, double.infinity).toDouble();
+      final soldQtyBase = soldLines.where((line) => (line['product_id'] as num).toInt() == pid).fold<double>(0, (sum, line) => sum + (((line['qty'] as num?)?.toDouble() ?? 0) * ((line['factor'] as num?)?.toDouble() ?? 1)));
+      final remainingBase = (soldQtyBase - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble();
+      final remaining = remainingBase / factor;
       return AlertDialog(
         title: Text('استدعاء الفاتورة الأصلية ${saleHeaders.first['invoice_no'] ?? salesId}'),
         content: SizedBox(width: 540, child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -588,7 +590,7 @@ class _DataScreenState extends State<DataScreen> {
             return DropdownMenuItem<int>(value: id, child: Text('${name} — المباع: ${qty}'));
           }).toList(), onChanged: (v) => setDialogState(() { lineId = v; qtyController.text = '1'; })),
           const SizedBox(height: 10),
-          Align(alignment: Alignment.centerRight, child: Text('الكمية المتبقية للإرجاع لهذا الصنف: ${remaining}')),
+          Align(alignment: Alignment.centerRight, child: Text('المتبقي للإرجاع بوحدة الصنف المختارة: ${remaining.toStringAsFixed(3)}')),
           TextField(controller: qtyController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية المرتجعة')),
           const SizedBox(height: 10),
           DropdownButtonFormField<String>(initialValue: condition, decoration: const InputDecoration(labelText: 'حالة الصنف'), items: const ['سليم','تالف','غير قابل للبيع'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => condition = v ?? 'سليم')),
@@ -601,13 +603,15 @@ class _DataScreenState extends State<DataScreen> {
       final line = soldLines.firstWhere((row) => (row['id'] as num).toInt() == lineId);
       final pid = (line['product_id'] as num).toInt();
       final qty = double.tryParse(qtyController.text.trim());
-      final soldQty = (line['qty'] as num?)?.toDouble() ?? 0;
-      final remaining = (soldQty - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble();
-      if (qty == null || qty <= 0 || qty > remaining) throw StateError('الكمية يجب أن تكون أكبر من صفر وألا تتجاوز الكمية المباعة المتبقية (${remaining})');
+      final factor = ((line['factor'] as num?)?.toDouble() ?? 1).clamp(0.000001, double.infinity).toDouble();
+      final soldQtyBase = soldLines.where((row) => (row['product_id'] as num).toInt() == pid).fold<double>(0, (sum, row) => sum + (((row['qty'] as num?)?.toDouble() ?? 0) * ((row['factor'] as num?)?.toDouble() ?? 1)));
+      final remaining = (soldQtyBase - (alreadyReturned[pid] ?? 0)).clamp(0, double.infinity).toDouble() / factor;
+      if (qty == null || qty <= 0 || qty > remaining) throw StateError('الكمية يجب أن تكون أكبر من صفر وألا تتجاوز المتبقي (${remaining.toStringAsFixed(3)})');
       final exists = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=? AND product_id=?', whereArgs: [_selectedId, pid]);
       if (exists.isNotEmpty) throw StateError('هذا الصنف موجود بالفعل في المرتجع الحالي؛ احذف السطر أو عدّله قبل الإضافة مرة أخرى');
       final price = (line['price'] as num?)?.toDouble() ?? 0;
-      await DatabaseHelper.instance.insert('sales_return_lines', {'return_id': _selectedId, 'product_id': pid, 'qty': qty, 'price': price, 'condition': condition});
+      // Store return quantity in base stock units so inventory and over-return checks stay consistent.
+      await DatabaseHelper.instance.insert('sales_return_lines', {'return_id': _selectedId, 'product_id': pid, 'qty': qty * factor, 'price': price / factor, 'condition': condition});
       final current = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=?', whereArgs: [_selectedId]);
       final total = current.fold<double>(0, (sum, row) => sum + (((row['qty'] as num?)?.toDouble() ?? 0) * ((row['price'] as num?)?.toDouble() ?? 0)));
       await DatabaseHelper.instance.update('sales_returns', {'total': total}, where: 'id=?', whereArgs: [_selectedId]);
