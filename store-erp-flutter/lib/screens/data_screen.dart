@@ -940,6 +940,8 @@ class _DataScreenState extends State<DataScreen> {
       _backupNameController.text = values['backup_file_name'] ?? 'store_backup';
       _verifyBackup = values['backup_verify'] != 'false';
       _safetyCopyBeforeRestore = values['backup_safety_copy'] != 'false';
+      _dailyBackupEnabled = values['backup_daily_enabled'] == 'true';
+      _backupTimeController.text = values['backup_daily_time'] ?? '22:00';
     });
   }
 
@@ -951,6 +953,8 @@ class _DataScreenState extends State<DataScreen> {
       'backup_file_name': _backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim(),
       'backup_verify': '$_verifyBackup',
       'backup_safety_copy': '$_safetyCopyBeforeRestore',
+      'backup_daily_enabled': '$_dailyBackupEnabled',
+      'backup_daily_time': _backupTimeController.text.trim(),
     };
     for (final entry in values.entries) {
       final found = await DatabaseHelper.instance.query('app_settings', where: 'key=?', whereArgs: [entry.key], limit: 1);
