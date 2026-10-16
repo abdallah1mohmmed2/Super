@@ -416,7 +416,8 @@ class _DataScreenState extends State<DataScreen> {
         if(already.isNotEmpty) throw StateError('الصنف موجود مسبقًا في مستند الجرد');
         values.remove('qty'); values.addAll({'book_qty':bookQty,'count_qty':qty,'count_qty2':qty,'difference':qty-bookQty,'difference_cost':0});
       }
-      final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'قطعة').toString()).firstWhere((_)=>true, orElse:()=> 'قطعة');
+      final selectedProduct = products.firstWhere((x)=>(x['id'] as num).toInt()==productId);
+      final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'').toString()).firstWhere((name)=>name.isNotEmpty, orElse:()=>(selectedProduct['unit']??'قطعة').toString());
       if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'production_date':production.isEmpty?null:production,'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isReturn) values.addAll({'price':price,'condition':returnCondition});
