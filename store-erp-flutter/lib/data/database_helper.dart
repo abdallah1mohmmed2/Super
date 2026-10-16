@@ -17,7 +17,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 9,
+        version: 13,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -30,7 +30,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 9, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 13, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -40,7 +40,7 @@ class DatabaseHelper {
       await db.execute('''CREATE TABLE IF NOT EXISTS accounting_entry_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER NOT NULL REFERENCES accounting_entries(id) ON DELETE CASCADE, account_code TEXT NOT NULL, account_name TEXT NOT NULL, debit REAL NOT NULL DEFAULT 0, credit REAL NOT NULL DEFAULT 0, CHECK(debit >= 0 AND credit >= 0), CHECK(NOT (debit > 0 AND credit > 0)))''');
       await db.execute('''CREATE TABLE IF NOT EXISTS app_accounts(account_code TEXT PRIMARY KEY, account_name TEXT NOT NULL, account_type TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)''');
       for (final account in [
-        ['1000','الصندوق','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
+        ['1000','الصندوق','أصول'], ['1010','البنك / البطاقة','أصول'], ['1020','شيكات تحت التحصيل','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
         ['2000','ذمم الموردين','التزامات'], ['3000','رأس المال','حقوق ملكية'], ['4000','إيرادات المبيعات','إيرادات'], ['4100','مردودات المبيعات','إيرادات'],
         ['5000','تكلفة البضاعة المباعة','مصروفات'], ['5100','مصروفات التالف','مصروفات']
       ]) {
@@ -116,6 +116,28 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status, request_date)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_entity ON approval_requests(entity_type, entity_id)');
     }
+    if (oldVersion < 10) {
+      final salesLineColumns = await db.rawQuery('PRAGMA table_info(sales_lines)');
+      if (!salesLineColumns.any((column) => column['name'] == 'notes')) {
+        await db.execute('ALTER TABLE sales_lines ADD COLUMN notes TEXT');
+      }
+    }
+    if (oldVersion < 11) {
+      await db.insert('app_accounts', {'account_code':'1010','account_name':'البنك / البطاقة','account_type':'أصول','is_active':1}, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert('app_accounts', {'account_code':'1020','account_name':'شيكات تحت التحصيل','account_type':'أصول','is_active':1}, conflictAlgorithm: ConflictAlgorithm.ignore);
+    }
+    if (oldVersion < 12) {
+      final salesHeaderColumns = await db.rawQuery('PRAGMA table_info(sales_header)');
+      if (!salesHeaderColumns.any((column) => column['name'] == 'cash_session_id')) {
+        await db.execute('ALTER TABLE sales_header ADD COLUMN cash_session_id INTEGER REFERENCES cash_sessions(id)');
+      }
+    }
+    if (oldVersion < 13) {
+      final salesHeaderColumns = await db.rawQuery('PRAGMA table_info(sales_header)');
+      if (!salesHeaderColumns.any((column) => column['name'] == 'cashier')) {
+        await db.execute('ALTER TABLE sales_header ADD COLUMN cashier TEXT');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -130,8 +152,8 @@ class DatabaseHelper {
       '''CREATE TABLE warehouses(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, is_active INTEGER DEFAULT 1)''',
       '''CREATE TABLE cash_boxes(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1)''',
       '''CREATE TABLE inventory(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id), warehouse_id INTEGER NOT NULL REFERENCES warehouses(id), qty REAL NOT NULL DEFAULT 0, UNIQUE(product_id, warehouse_id))''',
-      '''CREATE TABLE sales_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, invoice_date TEXT NOT NULL, customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
-      '''CREATE TABLE sales_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, sales_id INTEGER NOT NULL REFERENCES sales_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, price REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, line_total REAL NOT NULL)''',
+      '''CREATE TABLE sales_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, invoice_date TEXT NOT NULL, customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), cash_session_id INTEGER REFERENCES cash_sessions(id), cashier TEXT, payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
+      '''CREATE TABLE sales_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, sales_id INTEGER NOT NULL REFERENCES sales_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, price REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, line_total REAL NOT NULL, notes TEXT)''',
       '''CREATE TABLE purchases_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, external_no TEXT, invoice_date TEXT NOT NULL, supplier_id INTEGER REFERENCES suppliers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE purchases_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL REFERENCES purchases_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, cost REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, batch_no TEXT, production_date TEXT, expiry_date TEXT, line_total REAL NOT NULL)''',
       '''CREATE TABLE sales_returns(id INTEGER PRIMARY KEY AUTOINCREMENT, return_no TEXT UNIQUE, sales_id INTEGER REFERENCES sales_header(id), customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), return_date TEXT, total REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', reason TEXT)''',
@@ -174,7 +196,7 @@ class DatabaseHelper {
     await db.insert('categories', {'name':'عام'});
     await db.insert('app_settings', {'key':'schema_version','value':'1'});
     for (final account in [
-      ['1000','الصندوق','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
+      ['1000','الصندوق','أصول'], ['1010','البنك / البطاقة','أصول'], ['1020','شيكات تحت التحصيل','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
       ['2000','ذمم الموردين','التزامات'], ['3000','رأس المال','حقوق ملكية'],
       ['4000','إيرادات المبيعات','إيرادات'], ['4100','مردودات المبيعات','إيرادات'], ['5000','تكلفة البضاعة المباعة','مصروفات'],
       ['5100','مصروفات التالف','مصروفات']
@@ -283,6 +305,11 @@ class DatabaseHelper {
       final saleRows = await txn.query('sales_header', where: 'id=?', whereArgs: [saleId], limit: 1);
       if (saleRows.isEmpty) throw StateError('فاتورة المبيعات غير موجودة');
       final sale = saleRows.first;
+      final sessionId = (sale['cash_session_id'] as num?)?.toInt();
+      if (sessionId != null) {
+        final sessions = await txn.query('cash_sessions', where:'id=? AND cash_box_id=? AND status=?', whereArgs:[sessionId, cashBoxId, 'مفتوحة'], limit:1);
+        if (sessions.isEmpty) throw StateError('جلسة الصندوق غير مفتوحة أو لا تتبع الصندوق المحدد');
+      }
       final approvalCustomerId = (sale['customer_id'] as num?)?.toInt();
       if (approvalCustomerId != null) {
         final approvalCustomers = await txn.query(
@@ -338,19 +365,41 @@ class DatabaseHelper {
         final balance=(customer['balance'] as num?)?.toDouble() ?? 0;
         if(limit>0 && balance+(net-paid)>limit) throw StateError('تجاوز حد ائتمان العميل');
       }
+      final paymentRows = await txn.query('document_payments', where:'document_type=? AND document_id=?', whereArgs:['sales', saleId]);
+      double cashPaid = 0, bankPaid = 0, chequePaid = 0;
+      if (paymentRows.isEmpty) {
+        cashPaid = paid; // Legacy invoices without payment detail are treated as cash.
+      } else {
+        for (final payment in paymentRows) {
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0;
+          switch ((payment['method'] ?? 'نقدي').toString()) {
+            case 'نقدي': cashPaid += amount; break;
+            case 'شيك': chequePaid += amount; break;
+            case 'بطاقة':
+            case 'تحويل بنكي': bankPaid += amount; break;
+            default: throw StateError('طريقة دفع غير مدعومة في فاتورة المبيعات: ${payment['method']}');
+          }
+        }
+        final paymentTotal = cashPaid + bankPaid + chequePaid;
+        if ((paymentTotal - paid).abs() > 0.005) throw StateError('إجمالي الدفعات لا يطابق المبلغ المدفوع في الفاتورة');
+      }
       await txn.update('sales_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'customer_id':customerId}, where:'id=?', whereArgs:[saleId]);
-      if (paid > 0) {
-        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':paid,'reference':'SALE-$saleId'});
-        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[paid,cashBoxId]);
+      if (cashPaid > 0) {
+        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':cashPaid,'reference':'SALE-$saleId'});
+        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[cashPaid,cashBoxId]);
       }
       if (customerId != null && net > paid) await txn.rawUpdate('UPDATE customers SET balance = balance + ? WHERE id=?',[net-paid,customerId]);
-      final entryId = await _createJournal(txn, 'SALE', saleId, sale['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مبيعات ${sale['invoice_no'] ?? saleId}', [
-        ['1000', 'الصندوق', paid, 0],
-        ['1200', 'ذمم العملاء', net-paid, 0],
+      final journalLines = <List<Object>>[];
+      if (cashPaid > 0) journalLines.add(['1000','الصندوق',cashPaid,0]);
+      if (bankPaid > 0) journalLines.add(['1010','البنك / البطاقة',bankPaid,0]);
+      if (chequePaid > 0) journalLines.add(['1020','شيكات تحت التحصيل',chequePaid,0]);
+      if (net > paid) journalLines.add(['1200','ذمم العملاء',net-paid,0]);
+      journalLines.addAll([
         ['4000', 'إيرادات المبيعات', 0, net],
         ['5000', 'تكلفة البضاعة المباعة', costTotal, 0],
         ['1100', 'المخزون', 0, costTotal],
       ]);
+      final entryId = await _createJournal(txn, 'SALE', saleId, sale['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مبيعات ${sale['invoice_no'] ?? saleId}', journalLines);
       await txn.insert('audit_log', {'action':'ترحيل فاتورة مبيعات','entity':'sales_header','entity_id':saleId,'details':'قيد محاسبي $entryId'});
     });
   }

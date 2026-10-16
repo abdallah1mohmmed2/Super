@@ -37,7 +37,7 @@ class _DataScreenState extends State<DataScreen> {
   
   ScreenConfig get config => screenConfigs[widget.screenKey] ?? screenConfigs['products']!;
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
-  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
+  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','cash_session_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
   bool _referencesLoading = true;
@@ -56,6 +56,7 @@ class _DataScreenState extends State<DataScreen> {
     'product_id': ('products', 'name'),
     'warehouse_id': ('warehouses', 'name'),
     'cash_box_id': ('cash_boxes', 'name'),
+    'cash_session_id': ('cash_sessions', 'session_no'),
     'customer_id': ('customers', 'name'),
     'supplier_id': ('suppliers', 'name'),
     'sales_id': ('sales_header', 'invoice_no'),
@@ -70,6 +71,7 @@ class _DataScreenState extends State<DataScreen> {
   void initState() {
     super.initState();
     _initControllers();
+    if (widget.screenKey == 'sales' && _controllers.containsKey('cashier')) _controllers['cashier']!.text = context.read<AppProvider>().currentUser;
     _loadReferenceOptions();
     if (widget.screenKey == 'backup') {
       _loadBackupSettings();
@@ -82,7 +84,10 @@ class _DataScreenState extends State<DataScreen> {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
         String? where;
-        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+        if (entry.key == 'cash_session_id') {
+          final boxId = int.tryParse(_controllers['cash_box_id']?.text ?? '') ?? -1;
+          where = "status='مفتوحة' AND cash_box_id=$boxId";
+        } else if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
@@ -111,6 +116,9 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'cashier') {
+      return SizedBox(width: width, child: TextField(controller: _controllers[field], readOnly: true, decoration: const InputDecoration(labelText: 'الكاشير', prefixIcon: Icon(Icons.person_outline), helperText: 'يُحفظ تلقائيًا من المستخدم الحالي')));
+    }
     if (field == 'roles') {
       const roles = ['مدير نظام', 'مدير', 'محاسب', 'كاشير', 'مخزن'];
       final selected = _controllers[field]!.text
@@ -206,6 +214,10 @@ class _DataScreenState extends State<DataScreen> {
               ? null
               : (value) {
                   _controllers[field]!.text = value?.toString() ?? '';
+                  if (field == 'cash_box_id' && widget.screenKey == 'sales') {
+                    _controllers['cash_session_id']?.clear();
+                    _loadReferenceOptions();
+                  }
                   setState(() {});
                 },
         ),
@@ -272,6 +284,11 @@ class _DataScreenState extends State<DataScreen> {
     }
     if (_controllers.containsKey('payment_method') && _controllers['payment_method']!.text.isEmpty) {
       _controllers['payment_method']!.text = 'نقدي';
+    }
+    if (['sales','purchases'].contains(widget.screenKey)) {
+      for (final field in ['discount','tax']) {
+        if (_controllers.containsKey(field) && _controllers[field]!.text.isEmpty) _controllers[field]!.text = '0';
+      }
     }
     if (_controllers.containsKey('unit') && _controllers['unit']!.text.isEmpty) {
       _controllers['unit']!.text = 'قطعة';
@@ -505,6 +522,7 @@ class _DataScreenState extends State<DataScreen> {
     final discountController = TextEditingController(text:'0');
     final taxController = TextEditingController(text:'0');
     final productSearchController = TextEditingController();
+    final lineNotesController = TextEditingController();
     final allUnits = await DatabaseHelper.instance.query('product_units', orderBy:'unit_name');
     List<Map<String,Object?>> unitOptions = allUnits.where((u)=>(u['product_id'] as num?)?.toInt()==productId).toList();
     int? selectedUnitId = unitOptions.isEmpty ? null : (unitOptions.first['id'] as num).toInt();
@@ -524,12 +542,13 @@ class _DataScreenState extends State<DataScreen> {
         if (isSale || isPurchase) ...[const SizedBox(height:10),Row(children:[Expanded(child:TextFormField(controller:discountController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الخصم'))),const SizedBox(width:10),Expanded(child:TextFormField(controller:taxController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الضريبة')))])],
         if (isPurchase) ...[const SizedBox(height:10),TextFormField(controller:batchController,decoration:const InputDecoration(labelText:'رقم التشغيلة (اختياري)')),const SizedBox(height:10),TextFormField(controller:productionController,decoration:const InputDecoration(labelText:'تاريخ الإنتاج YYYY-MM-DD')),const SizedBox(height:10),TextFormField(controller:expiryController,decoration:const InputDecoration(labelText:'تاريخ الانتهاء YYYY-MM-DD'))],
         if (isDamage) ...[const SizedBox(height:10),TextFormField(controller:batchController,decoration:const InputDecoration(labelText:'رقم الدفعة (اختياري)'))],
+        if (isSale) ...[const SizedBox(height:10),TextFormField(controller:lineNotesController,decoration:const InputDecoration(labelText:'ملاحظات السطر (اختياري)'))],
         if (isReturn) ...[const SizedBox(height:10),DropdownButtonFormField<String>(initialValue:returnCondition,decoration:const InputDecoration(labelText:'حالة الصنف المرتجع'),items:const ['سليم','تالف','غير قابل للبيع'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setDialogState(()=>returnCondition=v??'سليم'))],
       ]))),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);},child:const Text('إضافة'))]
     )));
     
-    if (result != true || productId == null || !mounted) { qtyController.dispose(); priceController.dispose(); batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); return; }
+    if (result != true || productId == null || !mounted) { qtyController.dispose(); priceController.dispose(); batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); lineNotesController.dispose(); return; }
     
     try {
       final qty = double.parse(qtyController.text);
@@ -559,7 +578,7 @@ class _DataScreenState extends State<DataScreen> {
       }
       final selectedProduct = products.firstWhere((x)=>(x['id'] as num).toInt()==productId);
       final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'').toString()).firstWhere((name)=>name.isNotEmpty, orElse:()=>(selectedProduct['unit']??'قطعة').toString());
-      if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
+      if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'notes':lineNotesController.text.trim(),'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'production_date':production.isEmpty?null:production,'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isReturn) values.addAll({'qty':qty*unitFactor,'price':price/unitFactor,'condition':returnCondition});
       if (isTransfer) values.addAll({'factor':1,'unit':'قطعة'});
@@ -588,14 +607,94 @@ class _DataScreenState extends State<DataScreen> {
     } finally {
       qtyController.dispose(); 
       priceController.dispose(); 
-      batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose();
+      batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); lineNotesController.dispose();
       if(mounted) setState((){});
     }
+  }
+
+  Future<List<Map<String,Object?>>> _loadLineRows() async {
+    if (_selectedId == null || _lineTable == null || _lineParent == null) return <Map<String,Object?>>[];
+    if (widget.screenKey == 'sales') {
+      final db = await DatabaseHelper.instance.database;
+      return db.rawQuery('SELECT sales_lines.*, products.name AS product_name, products.code AS product_code FROM sales_lines LEFT JOIN products ON products.id=sales_lines.product_id WHERE sales_lines.sales_id=? ORDER BY sales_lines.id', [_selectedId]);
+    }
+    return DatabaseHelper.instance.query(_lineTable!, where:'$_lineParent=?', whereArgs:[_selectedId], orderBy:'id');
+  }
+
+  Future<void> _adjustSalesLineQty(Map<String,Object?> row, double delta) async {
+    if (widget.screenKey != 'sales' || _selectedId == null) return;
+    try {
+      final headers = await DatabaseHelper.instance.query('sales_header', where:'id=?', whereArgs:[_selectedId], limit:1);
+      if (headers.isEmpty || headers.first['status'] == 'مرحل') throw StateError('لا يمكن تعديل فاتورة مرحلة');
+      final qty = ((row['qty'] as num?)?.toDouble() ?? 0) + delta;
+      if (qty <= 0) throw StateError('الكمية يجب أن تكون أكبر من صفر');
+      final price = (row['price'] as num?)?.toDouble() ?? 0;
+      final discount = (row['discount'] as num?)?.toDouble() ?? 0;
+      final tax = (row['tax'] as num?)?.toDouble() ?? 0;
+      final lineTotal = qty*price-discount+tax;
+      if (lineTotal < 0) throw StateError('الخصم أكبر من قيمة السطر');
+      await DatabaseHelper.instance.update('sales_lines', {'qty':qty,'line_total':lineTotal}, where:'id=? AND sales_id=?', whereArgs:[row['id'],_selectedId]);
+      final lines = await DatabaseHelper.instance.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
+      final subtotal = lines.fold<double>(0,(sum,line)=>sum+((line['line_total'] as num?)?.toDouble()??0));
+      final header = headers.first;
+      final invoiceDiscount = (header['discount'] as num?)?.toDouble() ?? 0;
+      final invoiceTax = (header['tax'] as num?)?.toDouble() ?? 0;
+      await DatabaseHelper.instance.update('sales_header', {'subtotal':subtotal,'net':(subtotal-invoiceDiscount+invoiceTax).clamp(0,double.infinity).toDouble()}, where:'id=?', whereArgs:[_selectedId]);
+      await context.read<AppProvider>().refresh();
+      if (mounted) setState(() {});
+    } catch (e) { _message('تعذر تعديل الكمية: $e'); }
   }
 
   String? get _lineTable => switch(widget.screenKey) {'sales'=>'sales_lines','purchases'=>'purchases_lines','returns'=>'sales_return_lines','transfers'=>'warehouse_transfer_lines','damage'=>'damage_lines','countdocs'=>'inventory_items',_=>null};
   String? get _lineParent => switch(widget.screenKey) {'sales'=>'sales_id','purchases'=>'purchase_id','returns'=>'return_id','transfers'=>'transfer_id','damage'=>'document_id','countdocs'=>'document_id',_=>null};
   
+  Future<void> _openSalesInvoice() async {
+    if (widget.screenKey != 'sales') return;
+    try {
+      final invoices = await DatabaseHelper.instance.query('sales_header', orderBy: 'id DESC', limit: 150);
+      if (!mounted) return;
+      if (invoices.isEmpty) { _message('لا توجد فواتير مبيعات محفوظة'); return; }
+      final selected = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('فتح فاتورة مبيعات'),
+        content: SizedBox(width: 650, height: 500, child: ListView.separated(itemCount: invoices.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (ctx, index) { final row = invoices[index]; return ListTile(title: Text('فاتورة ${row['invoice_no'] ?? row['id']}'), subtitle: Text('التاريخ: ${row['invoice_date'] ?? '—'}  •  الحالة: ${row['status'] ?? 'مسودة'}  •  الصافي: ${((row['net'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}'), trailing: const Icon(Icons.chevron_left), onTap: () => Navigator.pop(ctx, row)); })),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء'))],
+      ));
+      if (selected != null && mounted) { _select(selected); setState(() {}); }
+    } catch (e) { _message('تعذر فتح الفواتير: $e'); }
+  }
+
+  Future<void> _editSalesLine(Map<String,Object?> row) async {
+    if (widget.screenKey != 'sales' || _selectedId == null) return;
+    final header = await DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (header.isEmpty || header.first['status'] == 'مرحل') { _message('لا يمكن تعديل بند فاتورة مرحلة'); return; }
+    final qty = TextEditingController(text: '${row['qty'] ?? 1}');
+    final price = TextEditingController(text: '${row['price'] ?? 0}');
+    final discount = TextEditingController(text: '${row['discount'] ?? 0}');
+    final tax = TextEditingController(text: '${row['tax'] ?? 0}');
+    final notes = TextEditingController(text: '${row['notes'] ?? ''}');
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تعديل سطر المبيعات'), content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية')),
+      TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'سعر البيع')),
+      Row(children: [Expanded(child: TextField(controller: discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الخصم'))), const SizedBox(width: 8), Expanded(child: TextField(controller: tax, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الضريبة')))]),
+      TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظات السطر')),
+    ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حفظ التعديل'))]));
+    if (ok == true && mounted) {
+      try {
+        final q = double.tryParse(qty.text.trim()), p = double.tryParse(price.text.trim()), d = double.tryParse(discount.text.trim()) ?? 0, t = double.tryParse(tax.text.trim()) ?? 0;
+        if (q == null || p == null || q <= 0 || p < 0 || d < 0 || t < 0 || d > q * p) throw StateError('تحقق من الكمية والسعر والخصم والضريبة');
+        final total = q * p - d + t;
+        await DatabaseHelper.instance.update('sales_lines', {'qty': q, 'price': p, 'discount': d, 'tax': t, 'line_total': total, 'notes': notes.text.trim()}, where: 'id=? AND sales_id=?', whereArgs: [row['id'], _selectedId]);
+        final lines = await DatabaseHelper.instance.query('sales_lines', where: 'sales_id=?', whereArgs: [_selectedId]);
+        final subtotal = lines.fold<double>(0, (sum, line) => sum + ((line['line_total'] as num?)?.toDouble() ?? 0));
+        final h = header.first; final invoiceDiscount = (h['discount'] as num?)?.toDouble() ?? 0; final invoiceTax = (h['tax'] as num?)?.toDouble() ?? 0;
+        await DatabaseHelper.instance.update('sales_header', {'subtotal': subtotal, 'net': (subtotal - invoiceDiscount + invoiceTax).clamp(0, double.infinity).toDouble()}, where: 'id=?', whereArgs: [_selectedId]);
+        await context.read<AppProvider>().refresh();
+        if (mounted) { _message('تم تحديث سطر المبيعات'); setState(() {}); }
+      } catch (e) { _message('تعذر تعديل السطر: $e'); }
+    }
+    qty.dispose(); price.dispose(); discount.dispose(); tax.dispose(); notes.dispose();
+  }
+
   Future<void> _deleteLine(Map<String,Object?> row) async {
     final table=_lineTable, parent=_lineParent; 
     if(table==null||parent==null||_selectedId==null) return;
@@ -629,6 +728,37 @@ class _DataScreenState extends State<DataScreen> {
     } catch(e) {
       _message('تعذر حذف البند: $e');
     }
+  }
+
+  Future<void> _refreshSalesScreen() async {
+    await context.read<AppProvider>().refresh();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveAndPostSales() async {
+    if (widget.screenKey != 'sales') return;
+    for (final field in ['invoice_no','invoice_date','warehouse_id','cash_box_id']) {
+      if ((_controllers[field]?.text.trim() ?? '').isEmpty) { _message('أكمل الحقل «${fieldLabel(field)}» قبل الحفظ والترحيل'); return; }
+    }
+    final discountText = _controllers['discount']?.text.trim() ?? '';
+    final taxText = _controllers['tax']?.text.trim() ?? '';
+    if (double.tryParse(discountText.isEmpty ? '0' : discountText) == null || double.tryParse(taxText.isEmpty ? '0' : taxText) == null) {
+      _message('تحقق من قيمة الخصم والضريبة'); return;
+    }
+    await _save();
+    if (!mounted || _selectedId == null) return;
+    final rows = await DatabaseHelper.instance.query('sales_header', where:'id=?', whereArgs:[_selectedId], limit:1);
+    if (rows.isEmpty) { _message('تعذر العثور على الفاتورة بعد الحفظ'); return; }
+    final header = rows.first;
+    for (final field in ['invoice_no','invoice_date','customer_id','warehouse_id','cash_box_id','cash_session_id','cashier','payment_method','discount','tax','notes']) {
+      final raw = _controllers[field]?.text.trim() ?? '';
+      if (raw.isEmpty) continue;
+      if (_numericFields.contains(field)) {
+        final value = num.tryParse(raw);
+        if (value == null || ((header[field] as num?)?.toDouble() ?? 0) != value.toDouble()) { _message('لم يتم حفظ قيمة «${fieldLabel(field)}»؛ راجعها قبل الترحيل'); return; }
+      } else if ((header[field] ?? '').toString() != raw) { _message('لم يتم حفظ قيمة «${fieldLabel(field)}»؛ راجعها قبل الترحيل'); return; }
+    }
+    await _postSelected();
   }
 
   Future<void> _postSelected() async {
@@ -903,11 +1033,12 @@ class _DataScreenState extends State<DataScreen> {
       _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
     }
     if (widget.screenKey == 'backup') _restorePathController.text = (row['file_path'] ?? '').toString();
+    if (widget.screenKey == 'sales') _loadReferenceOptions();
   }
   
   void _clear() { 
     for (final controller in _controllers.values) { controller.clear(); } 
-    setState(() { _selectedId = null; _applyDefaults(); }); 
+    setState(() { _selectedId = null; _applyDefaults(); if (widget.screenKey == 'sales' && _controllers.containsKey('cashier')) _controllers['cashier']!.text = context.read<AppProvider>().currentUser; }); 
   }
   
   void _message(String text) { 
@@ -1121,8 +1252,12 @@ class _DataScreenState extends State<DataScreen> {
             title: config.title, 
             trailing: Wrap(spacing: 8, children: [
               if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
-              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
-              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (widget.screenKey == 'sales') ...[
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: _refreshSalesScreen),
+                ActionButton('فتح فاتورة', icon: Icons.folder_open, onPressed: _openSalesInvoice),
+              ],
+              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton(widget.screenKey == 'sales' ? 'إضافة / بحث صنف' : 'إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
+              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton(widget.screenKey == 'sales' ? 'حفظ وترحيل' : 'ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: widget.screenKey == 'sales' ? _saveAndPostSales : _postSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
               if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
@@ -1132,11 +1267,18 @@ class _DataScreenState extends State<DataScreen> {
               if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
               if (widget.screenKey == 'returns' && _selectedId != null) ActionButton('استدعاء الفاتورة الأصلية', icon: Icons.receipt_long_outlined, onPressed: _loadOriginalInvoice),
               if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
+              if (widget.screenKey == 'sales') ActionButton('إغلاق', icon: Icons.close, onPressed: () { Navigator.of(context).maybePop(); }),
             ]), 
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, 
               children: [
-                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
+                if (widget.screenKey == 'sales') ...[
+                  Card(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 18, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.person_outline), const SizedBox(width: 6), Text('الكاشير: ${context.watch<AppProvider>().currentUser}')]),
+                    if (_selectedId == null) const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.receipt_long_outlined), SizedBox(width: 6), Text('الحالة: مسودة جديدة')]) else FutureBuilder<List<Map<String,Object?>>>(future: DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [_selectedId], limit: 1), builder: (context, snapshot) { final rows = snapshot.data ?? const <Map<String,Object?>>[]; return Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.receipt_long_outlined), const SizedBox(width: 6), Text('الحالة: ${rows.isEmpty ? '—' : rows.first['status'] ?? 'مسودة'}')]); }),
+                    if (_controllers['cash_box_id']?.text.isNotEmpty == true) FutureBuilder<List<Map<String,Object?>>>(future: DatabaseHelper.instance.query('cash_sessions', where: "cash_box_id=? AND status='مفتوحة'", whereArgs: [int.tryParse(_controllers['cash_box_id']!.text) ?? -1], orderBy: 'id DESC', limit: 1), builder: (context, snapshot) { final rows = snapshot.data ?? const <Map<String,Object?>>[]; return Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.lock_open_outlined), const SizedBox(width: 6), Text(rows.isEmpty ? 'الجلسة: لا توجد جلسة مفتوحة' : 'الجلسة: ${rows.first['session_no'] ?? rows.first['id']}')]); }),
+                  ]))),
+                ] else if (widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
                 if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
                 if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
                 if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
@@ -1208,10 +1350,10 @@ class _DataScreenState extends State<DataScreen> {
           if (_selectedId != null && _lineTable != null) ...[
             const SizedBox(height: 12),
             FutureBuilder<List<Map<String,Object?>>>(
-              future: DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),
+              future: _loadLineRows(),
               builder: (context, lineSnapshot) {
                 final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
-                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
+                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k) && !(widget.screenKey == 'sales' && k == 'product_id')).toList();
                 return SectionCard(
                   title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
                   trailing: TextButton.icon(
@@ -1235,11 +1377,18 @@ class _DataScreenState extends State<DataScreen> {
                                     cells: [
                                       ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
                                       DataCell(
+                                        Row(mainAxisSize: MainAxisSize.min, children: [
+                                        if (widget.screenKey == 'sales') ...[
+                                          IconButton(tooltip: 'تقليل الكمية', onPressed: () => _adjustSalesLineQty(r, -1), icon: const Icon(Icons.remove_circle_outline)),
+                                          IconButton(tooltip: 'زيادة الكمية', onPressed: () => _adjustSalesLineQty(r, 1), icon: const Icon(Icons.add_circle_outline)),
+                                          IconButton(tooltip: 'تعديل السطر', onPressed: () => _editSalesLine(r), icon: const Icon(Icons.edit_outlined)),
+                                        ],
                                         IconButton(
                                           tooltip: 'حذف البند',
                                           onPressed: () => _deleteLine(r),
                                           icon: const Icon(Icons.delete_outline, color: Colors.red),
                                         ),
+                                        ]),
                                       ),
                                     ],
                                   );
