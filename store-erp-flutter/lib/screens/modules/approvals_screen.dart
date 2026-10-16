@@ -117,7 +117,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
             DataCell(Text((r['reference'] ?? r['entity_id'] ?? '—').toString())),
             DataCell(Text((r['requested_by'] ?? '—').toString())),
             DataCell(Text((r['request_date'] ?? '—').toString())),
-          ])).toList()),
+          ])).toList())),
         ])))),
         const SizedBox(width: 12),
         Expanded(flex: 5, child: Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
