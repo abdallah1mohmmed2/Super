@@ -685,7 +685,7 @@ class _DataScreenState extends State<DataScreen> {
       final existing = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
       final currentPaid = existing.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
       final total = ((headerRows.first['net'] ?? headerRows.first['total']) as num?)?.toDouble() ?? 0;
-      if (widget.screenKey != 'returns' && currentPaid + amount > total + 0.005) throw StateError('إجمالي الدفعات يتجاوز صافي المستند');
+      if (currentPaid + amount > total + 0.005) throw StateError('إجمالي الدفعات يتجاوز إجمالي المستند');
       await DatabaseHelper.instance.insert('document_payments', {
         'document_type': _paymentDocumentType, 'document_id': _selectedId,
         'payment_date': DateTime.now().toIso8601String().substring(0, 10),
