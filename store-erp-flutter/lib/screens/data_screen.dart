@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io'; 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
@@ -24,8 +25,12 @@ class _DataScreenState extends State<DataScreen> {
   final _backupFolderController = TextEditingController();
   final _backupNameController = TextEditingController(text: 'store_backup');
   final _restorePathController = TextEditingController();
+  final _backupTimeController = TextEditingController(text: '22:00');
+  Timer? _backupTimer;
   bool _verifyBackup = true;
   bool _safetyCopyBeforeRestore = true;
+  bool _dailyBackupEnabled = false;
+  bool _lastBackupSucceeded = false;
   String _filter = '';
   int? _selectedId;
   bool _busy = false;
@@ -66,7 +71,10 @@ class _DataScreenState extends State<DataScreen> {
     super.initState();
     _initControllers();
     _loadReferenceOptions();
-    if (widget.screenKey == 'backup') _loadBackupSettings();
+    if (widget.screenKey == 'backup') {
+      _loadBackupSettings();
+      _backupTimer = Timer.periodic(const Duration(minutes: 1), (_) => _runDailyBackupIfDue());
+    }
   }
 
   Future<void> _loadReferenceOptions() async {
@@ -322,6 +330,8 @@ class _DataScreenState extends State<DataScreen> {
     _backupFolderController.dispose();
     _backupNameController.dispose();
     _restorePathController.dispose();
+    _backupTimeController.dispose();
+    _backupTimer?.cancel();
     super.dispose(); 
   }
 
