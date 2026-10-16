@@ -192,8 +192,6 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final from = _box(_fromId);
-    final to = _box(_toId);
     final isPosted = _status == 'مرحل';
     return ListView(
       padding: const EdgeInsets.all(18),
