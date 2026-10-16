@@ -13,7 +13,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 5, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 6, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -43,6 +43,16 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE customers ADD COLUMN manager_approval INTEGER NOT NULL DEFAULT 0');
       }
     }
+    if (oldVersion < 6) {
+      final purchaseColumns = await db.rawQuery('PRAGMA table_info(purchases_header)');
+      if (!purchaseColumns.any((column) => column['name'] == 'payment_method')) {
+        await db.execute("ALTER TABLE purchases_header ADD COLUMN payment_method TEXT DEFAULT 'نقدي'");
+      }
+      final lineColumns = await db.rawQuery('PRAGMA table_info(purchases_lines)');
+      if (!lineColumns.any((column) => column['name'] == 'production_date')) {
+        await db.execute('ALTER TABLE purchases_lines ADD COLUMN production_date TEXT');
+      }
+    }
     if (oldVersion < 5) {
       await db.execute('''CREATE TABLE IF NOT EXISTS document_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type TEXT NOT NULL, document_id INTEGER NOT NULL, payment_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, method TEXT NOT NULL DEFAULT 'نقدي', amount REAL NOT NULL CHECK(amount > 0), reference TEXT, notes TEXT)''');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_document_payments_parent ON document_payments(document_type, document_id)');
@@ -63,8 +73,8 @@ class DatabaseHelper {
       '''CREATE TABLE inventory(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id), warehouse_id INTEGER NOT NULL REFERENCES warehouses(id), qty REAL NOT NULL DEFAULT 0, UNIQUE(product_id, warehouse_id))''',
       '''CREATE TABLE sales_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, invoice_date TEXT NOT NULL, customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE sales_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, sales_id INTEGER NOT NULL REFERENCES sales_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, price REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, line_total REAL NOT NULL)''',
-      '''CREATE TABLE purchases_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, external_no TEXT, invoice_date TEXT NOT NULL, supplier_id INTEGER REFERENCES suppliers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
-      '''CREATE TABLE purchases_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL REFERENCES purchases_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, cost REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, batch_no TEXT, expiry_date TEXT, line_total REAL NOT NULL)''',
+      '''CREATE TABLE purchases_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, external_no TEXT, invoice_date TEXT NOT NULL, supplier_id INTEGER REFERENCES suppliers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
+      '''CREATE TABLE purchases_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL REFERENCES purchases_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, cost REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, batch_no TEXT, production_date TEXT, expiry_date TEXT, line_total REAL NOT NULL)''',
       '''CREATE TABLE sales_returns(id INTEGER PRIMARY KEY AUTOINCREMENT, return_no TEXT UNIQUE, sales_id INTEGER REFERENCES sales_header(id), customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), return_date TEXT, total REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', reason TEXT)''',
       '''CREATE TABLE sales_return_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, price REAL NOT NULL, condition TEXT DEFAULT 'سليم')''',
       '''CREATE TABLE warehouse_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, transfer_date TEXT, from_warehouse_id INTEGER REFERENCES warehouses(id), to_warehouse_id INTEGER REFERENCES warehouses(id), status TEXT DEFAULT 'مسودة', notes TEXT)''',
