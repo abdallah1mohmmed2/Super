@@ -26,7 +26,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     try {
       final result=await Future.wait([db.query('products',orderBy:'name COLLATE NOCASE'),db.query('categories',orderBy:'name'),db.query('warehouses',orderBy:'name')]);
       if(!mounted)return;
-      setState(()=>{products=result[0],categories=result[1],warehouses=result[2]});
+      setState(() { products=result[0]; categories=result[1]; warehouses=result[2]; });
       if(selectedId!=null) await loadChildren();
     } catch(e) {msg('تعذر تحميل الأصناف: $e');}
   }
@@ -41,7 +41,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
         db.query('inventory',where:'product_id=?',whereArgs:[id]),
       ]);
       if(!mounted)return;
-      setState(()=>{units=r[0],barcodes=r[1],reorderLevels=r[2],batches=r[3],stock=r[4]});
+      setState(() { units=r[0]; barcodes=r[1]; reorderLevels=r[2]; batches=r[3]; stock=r[4]; });
     } catch(e) {msg('تعذر تحميل تفاصيل الصنف: $e');}
   }
   void clearForm(){
