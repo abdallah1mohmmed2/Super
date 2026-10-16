@@ -13,7 +13,7 @@ const screenConfigs = <String, ScreenConfig>{
  'users': ScreenConfig('إدارة المستخدمين','users',['username','full_name','password_hash','confirm_password','roles','is_active'],['id','username','full_name','roles','is_active']),
  'sales': ScreenConfig('فواتير المبيعات','sales_header',['invoice_no','invoice_date','customer_id','warehouse_id','cash_box_id','payment_method','discount','tax','paid','notes'],['id','invoice_no','invoice_date','net','paid','status']),
  'returns': ScreenConfig('مرتجع البيع','sales_returns',['return_no','return_date','sales_id','customer_id','warehouse_id','reason'],['id','return_no','return_date','total','status']),
- 'purchases': ScreenConfig('فواتير المشتريات','purchases_header',['invoice_no','external_no','invoice_date','supplier_id','warehouse_id','cash_box_id','discount','tax','paid','notes'],['id','invoice_no','invoice_date','net','paid','status']),
+ 'purchases': ScreenConfig('فواتير المشتريات','purchases_header',['invoice_no','external_no','invoice_date','supplier_id','warehouse_id','cash_box_id','payment_method','discount','tax','paid','notes'],['id','invoice_no','invoice_date','net','paid','status']),
  'inventory': ScreenConfig('أرصدة المخزون','inventory',['product_id','warehouse_id','qty'],['id','product_id','warehouse_id','qty']),
  'transfers': ScreenConfig('تحويل المخازن','warehouse_transfers',['transfer_no','transfer_date','from_warehouse_id','to_warehouse_id','notes'],['id','transfer_no','transfer_date','status','notes']),
  'damage': ScreenConfig('سند التالف والمنتهي','damage_documents',['document_no','document_date','warehouse_id','document_type','cause'],['id','document_no','document_date','document_type','status']),
