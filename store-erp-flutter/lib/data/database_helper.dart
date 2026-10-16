@@ -218,14 +218,18 @@ class DatabaseHelper {
         // The entered cost is per selected unit; normalize it to the product's base unit.
         await txn.update('products', {'cost_price':cost / factor}, where:'id=?', whereArgs:[productId]);
         final batchNo = (line['batch_no'] ?? '').toString().trim();
+        final productionDate = (line['production_date'] ?? '').toString().trim();
         final expiryDate = (line['expiry_date'] ?? '').toString().trim();
-        if (batchNo.isNotEmpty || expiryDate.isNotEmpty) {
+        if (batchNo.isNotEmpty || productionDate.isNotEmpty || expiryDate.isNotEmpty) {
           final batches = await txn.query(
             'product_batches',
             where: 'product_id=? AND warehouse_id=? AND COALESCE(batch_no, \'\')=?',
             whereArgs: [productId, warehouseId, batchNo],
           );
-          final existingBatch = batches.where((batch) => (batch['expiry_date'] ?? '').toString() == expiryDate).toList();
+          final existingBatch = batches.where((batch) =>
+            (batch['production_date'] ?? '').toString() == productionDate &&
+            (batch['expiry_date'] ?? '').toString() == expiryDate
+          ).toList();
           if (existingBatch.isNotEmpty) {
             final oldBatchQty = (existingBatch.first['qty'] as num?)?.toDouble() ?? 0;
             await txn.update('product_batches', {'qty': oldBatchQty + qty}, where: 'id=?', whereArgs: [existingBatch.first['id']]);
@@ -234,6 +238,7 @@ class DatabaseHelper {
               'product_id': productId,
               'warehouse_id': warehouseId,
               'batch_no': batchNo.isEmpty ? null : batchNo,
+              'production_date': productionDate.isEmpty ? null : productionDate,
               'expiry_date': expiryDate.isEmpty ? null : expiryDate,
               'qty': qty,
             });
