@@ -740,7 +740,9 @@ class _DataScreenState extends State<DataScreen> {
     for (final field in ['invoice_no','invoice_date','warehouse_id','cash_box_id']) {
       if ((_controllers[field]?.text.trim() ?? '').isEmpty) { _message('أكمل الحقل «${fieldLabel(field)}» قبل الحفظ والترحيل'); return; }
     }
-    if (double.tryParse(_controllers['discount']?.text.trim() ?? '0') == null || double.tryParse(_controllers['tax']?.text.trim() ?? '0') == null) {
+    final discountText = _controllers['discount']?.text.trim() ?? '';
+    final taxText = _controllers['tax']?.text.trim() ?? '';
+    if (double.tryParse(discountText.isEmpty ? '0' : discountText) == null || double.tryParse(taxText.isEmpty ? '0' : taxText) == null) {
       _message('تحقق من قيمة الخصم والضريبة'); return;
     }
     await _save();
