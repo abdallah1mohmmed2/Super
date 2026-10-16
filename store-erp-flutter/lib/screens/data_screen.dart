@@ -328,6 +328,7 @@ class _DataScreenState extends State<DataScreen> {
         if (config.table == 'users' && (data['password_hash']?.toString().isEmpty ?? true)) data.remove('password_hash');
         await provider.edit(config.table, _selectedId!, data);
       }
+      if (widget.screenKey == 'sales') await _ensureManagerApprovalRequest();
       await _recalculateDraftTotals();
       
       if (!mounted) return; 
@@ -339,6 +340,61 @@ class _DataScreenState extends State<DataScreen> {
       _message('تعذر الحفظ: $e'); 
     } finally { 
       if (mounted) setState(() => _busy = false); 
+    }
+  }
+
+  Future<void> _ensureManagerApprovalRequest() async {
+    if (_selectedId == null || widget.screenKey != 'sales') return;
+    final headers = await DatabaseHelper.instance.query(
+      'sales_header',
+      where: 'id=?',
+      whereArgs: [_selectedId],
+      limit: 1,
+    );
+    if (headers.isEmpty) return;
+    final header = headers.first;
+    final customerId = (header['customer_id'] as num?)?.toInt();
+    if (customerId == null) return;
+    final customers = await DatabaseHelper.instance.query(
+      'customers',
+      where: 'id=?',
+      whereArgs: [customerId],
+      limit: 1,
+    );
+    if (customers.isEmpty || ((customers.first['manager_approval'] as num?)?.toInt() ?? 0) != 1) return;
+    final requests = await DatabaseHelper.instance.query(
+      'approval_requests',
+      where: 'entity_type=? AND entity_id=?',
+      whereArgs: ['sales', _selectedId],
+      orderBy: 'id DESC',
+      limit: 1,
+    );
+    final now = DateTime.now().toIso8601String();
+    final data = <String,Object?>{
+      'entity_type': 'sales',
+      'entity_id': _selectedId,
+      'request_type': 'اعتماد فاتورة مبيعات',
+      'reference': (header['invoice_no'] ?? _selectedId).toString(),
+      'requested_by': context.read<AppProvider>().currentUser,
+      'request_date': now,
+      'request_notes': 'العميل المحدد يتطلب موافقة المدير قبل ترحيل الفاتورة.',
+      'status': 'معلق',
+      'decision_notes': null,
+      'decided_by': null,
+      'decided_at': null,
+    };
+    if (requests.isEmpty) {
+      await DatabaseHelper.instance.insert('approval_requests', data);
+    } else if (requests.first['status'] != 'معلق') {
+      await DatabaseHelper.instance.update(
+        'approval_requests',
+        data,
+        where: 'id=?',
+        whereArgs: [requests.first['id']],
+      );
+    }
+    if (mounted) {
+      await context.read<AppProvider>().refresh();
     }
   }
 
