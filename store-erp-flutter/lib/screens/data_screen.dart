@@ -37,7 +37,7 @@ class _DataScreenState extends State<DataScreen> {
   
   ScreenConfig get config => screenConfigs[widget.screenKey] ?? screenConfigs['products']!;
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
-  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
+  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','cash_session_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
   bool _referencesLoading = true;
@@ -56,6 +56,7 @@ class _DataScreenState extends State<DataScreen> {
     'product_id': ('products', 'name'),
     'warehouse_id': ('warehouses', 'name'),
     'cash_box_id': ('cash_boxes', 'name'),
+    'cash_session_id': ('cash_sessions', 'session_no'),
     'customer_id': ('customers', 'name'),
     'supplier_id': ('suppliers', 'name'),
     'sales_id': ('sales_header', 'invoice_no'),
@@ -82,7 +83,9 @@ class _DataScreenState extends State<DataScreen> {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
         String? where;
-        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+        if (entry.key == 'cash_session_id') {
+          where = "status='مفتوحة'";
+        } else if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
