@@ -991,7 +991,7 @@ class _DataScreenState extends State<DataScreen> {
         final handle = await file.open();
         final header = await handle.read(16);
         await handle.close();
-        if (ascii.decode(header, allowInvalid: true) != 'SQLite format 3\\u0000') {
+        if (header.length != 16 || ascii.decode(header.take(15), allowInvalid: true) != 'SQLite format 3' || header[15] != 0) {
           throw StateError('فشل التحقق من ملف النسخة');
         }
         status = 'نجاح — تم التحقق من ترويسة SQLite';
