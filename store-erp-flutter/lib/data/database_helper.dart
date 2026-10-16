@@ -13,7 +13,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 6, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 7, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -57,6 +57,12 @@ class DatabaseHelper {
       await db.execute('''CREATE TABLE IF NOT EXISTS document_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type TEXT NOT NULL, document_id INTEGER NOT NULL, payment_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, method TEXT NOT NULL DEFAULT 'نقدي', amount REAL NOT NULL CHECK(amount > 0), reference TEXT, notes TEXT)''');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_document_payments_parent ON document_payments(document_type, document_id)');
     }
+    if (oldVersion < 7) {
+      final batchColumns = await db.rawQuery('PRAGMA table_info(product_batches)');
+      if (!batchColumns.any((column) => column['name'] == 'production_date')) {
+        await db.execute('ALTER TABLE product_batches ADD COLUMN production_date TEXT');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -90,7 +96,7 @@ class DatabaseHelper {
       '''CREATE TABLE audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER REFERENCES users(id), action TEXT NOT NULL, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''',
       '''CREATE TABLE backup_history(id INTEGER PRIMARY KEY AUTOINCREMENT, file_path TEXT NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP, status TEXT DEFAULT 'نجاح')''',
       '''CREATE TABLE reorder_levels(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, warehouse_id INTEGER NOT NULL REFERENCES warehouses(id), minimum REAL DEFAULT 0, maximum REAL DEFAULT 0, UNIQUE(product_id, warehouse_id))''',
-      '''CREATE TABLE product_batches(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id), warehouse_id INTEGER REFERENCES warehouses(id), batch_no TEXT, expiry_date TEXT, qty REAL DEFAULT 0)''',
+      '''CREATE TABLE product_batches(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id), warehouse_id INTEGER REFERENCES warehouses(id), batch_no TEXT, production_date TEXT, expiry_date TEXT, qty REAL DEFAULT 0)''',
       '''CREATE TABLE accounting_entries(id INTEGER PRIMARY KEY AUTOINCREMENT, entry_no TEXT UNIQUE NOT NULL, entry_date TEXT NOT NULL, source_type TEXT NOT NULL, source_id INTEGER NOT NULL, description TEXT, status TEXT NOT NULL DEFAULT 'مرحل', created_at TEXT DEFAULT CURRENT_TIMESTAMP, UNIQUE(source_type, source_id))''',
       '''CREATE TABLE accounting_entry_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER NOT NULL REFERENCES accounting_entries(id) ON DELETE CASCADE, account_code TEXT NOT NULL, account_name TEXT NOT NULL, debit REAL NOT NULL DEFAULT 0, credit REAL NOT NULL DEFAULT 0, CHECK(debit >= 0 AND credit >= 0), CHECK(NOT (debit > 0 AND credit > 0)))''',
       '''CREATE TABLE app_accounts(account_code TEXT PRIMARY KEY, account_name TEXT NOT NULL, account_type TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)''',
