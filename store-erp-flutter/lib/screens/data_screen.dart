@@ -67,8 +67,18 @@ class _DataScreenState extends State<DataScreen> {
     try {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
+        String? where;
+        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+             'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
+          where = 'is_active=1';
+        } else if (entry.key == 'product_id') {
+          where = 'is_active=1';
+        } else if (entry.key == 'sales_id') {
+          where = "status='مرحل'";
+        }
         loaded[entry.key] = await DatabaseHelper.instance.query(
           entry.value.$1,
+          where: where,
           orderBy: entry.value.$2,
         );
       }
