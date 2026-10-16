@@ -53,20 +53,8 @@ jobs:
       - name: Analyze Flutter project
         shell: pwsh
         run: |
-          $analysisOutput = flutter analyze --no-pub 2>&1
-          $analysisExitCode = $LASTEXITCODE
-          $analysisOutput | ForEach-Object { Write-Host $_ }
-          $analysisText = $analysisOutput -join "`n"
-
-          # Flutter analyze can return exit code 1 for informational lint diagnostics.
-          # Keep those visible, but stop the build only for actual analyzer errors.
-          if ($analysisText -match '(?im)\berror\s*[-•]') {
-            throw "Flutter analysis found errors; see diagnostics above."
-          }
-
-          if ($analysisExitCode -ne 0) {
-            Write-Host "Analyzer reported non-error diagnostics; continuing to the Windows build."
-          }
+          flutter analyze --no-pub --no-fatal-infos --no-fatal-warnings
+          if ($LASTEXITCODE -ne 0) { throw "Flutter analysis found errors; see diagnostics above." }
 
       - name: Build Windows release
         shell: pwsh
