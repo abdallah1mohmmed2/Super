@@ -13,7 +13,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 3, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 4, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -33,16 +33,26 @@ class DatabaseHelper {
     if (oldVersion < 3) {
       await db.execute('''CREATE TABLE IF NOT EXISTS daily_closings(id INTEGER PRIMARY KEY AUTOINCREMENT, close_date TEXT NOT NULL UNIQUE, sales_total REAL NOT NULL DEFAULT 0, sales_paid REAL NOT NULL DEFAULT 0, purchases_total REAL NOT NULL DEFAULT 0, cash_total REAL NOT NULL DEFAULT 0, closed_by TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''');
     }
+    if (oldVersion < 4) {
+      final productColumns = await db.rawQuery('PRAGMA table_info(products)');
+      if (!productColumns.any((column) => column['name'] == 'sale_method')) {
+        await db.execute("ALTER TABLE products ADD COLUMN sale_method TEXT NOT NULL DEFAULT 'قطعة'");
+      }
+      final customerColumns = await db.rawQuery('PRAGMA table_info(customers)');
+      if (!customerColumns.any((column) => column['name'] == 'manager_approval')) {
+        await db.execute('ALTER TABLE customers ADD COLUMN manager_approval INTEGER NOT NULL DEFAULT 0');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
     final statements = <String>[
       '''CREATE TABLE users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, full_name TEXT NOT NULL, password_hash TEXT NOT NULL, roles TEXT NOT NULL DEFAULT 'مدير نظام', is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''',
       '''CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)''',
-      '''CREATE TABLE products(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT NOT NULL, english_name TEXT, category_id INTEGER REFERENCES categories(id), unit TEXT DEFAULT 'قطعة', cost_price REAL NOT NULL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, stock_tracking INTEGER DEFAULT 1, negative_stock INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, notes TEXT)''',
+      '''CREATE TABLE products(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT NOT NULL, english_name TEXT, category_id INTEGER REFERENCES categories(id), unit TEXT DEFAULT 'قطعة', sale_method TEXT NOT NULL DEFAULT 'قطعة', cost_price REAL NOT NULL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, stock_tracking INTEGER DEFAULT 1, negative_stock INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, notes TEXT)''',
       '''CREATE TABLE product_units(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, unit_name TEXT NOT NULL, factor REAL NOT NULL DEFAULT 1, sale_price REAL DEFAULT 0)''',
       '''CREATE TABLE barcodes(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, unit_id INTEGER REFERENCES product_units(id) ON DELETE SET NULL, barcode TEXT UNIQUE NOT NULL)''',
-      '''CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT, phone TEXT, mobile TEXT, address TEXT, credit_limit REAL DEFAULT 0, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1, is_suspended INTEGER DEFAULT 0)''',
+      '''CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT, phone TEXT, mobile TEXT, address TEXT, credit_limit REAL DEFAULT 0, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1, is_suspended INTEGER DEFAULT 0, manager_approval INTEGER NOT NULL DEFAULT 0)''',
       '''CREATE TABLE suppliers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT, phone TEXT, mobile TEXT, address TEXT, tax_number TEXT, contact_person TEXT, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1, notes TEXT)''',
       '''CREATE TABLE warehouses(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, is_active INTEGER DEFAULT 1)''',
       '''CREATE TABLE cash_boxes(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1)''',
