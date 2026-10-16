@@ -607,6 +607,37 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  Future<List<Map<String,Object?>>> _loadLineRows() async {
+    if (_selectedId == null || _lineTable == null || _lineParent == null) return <Map<String,Object?>>[];
+    if (widget.screenKey == 'sales') {
+      final db = await DatabaseHelper.instance.database;
+      return db.rawQuery('SELECT sales_lines.*, products.name AS product_name, products.code AS product_code FROM sales_lines LEFT JOIN products ON products.id=sales_lines.product_id WHERE sales_lines.sales_id=? ORDER BY sales_lines.id', [_selectedId]);
+    }
+    return DatabaseHelper.instance.query(_lineTable!, where:'$_lineParent=?', whereArgs:[_selectedId], orderBy:'id');
+  }
+
+  Future<void> _adjustSalesLineQty(Map<String,Object?> row, double delta) async {
+    if (widget.screenKey != 'sales' || _selectedId == null) return;
+    try {
+      final headers = await DatabaseHelper.instance.query('sales_header', where:'id=?', whereArgs:[_selectedId], limit:1);
+      if (headers.isEmpty || headers.first['status'] == 'مرحل') throw StateError('لا يمكن تعديل فاتورة مرحلة');
+      final qty = ((row['qty'] as num?)?.toDouble() ?? 0) + delta;
+      if (qty <= 0) throw StateError('الكمية يجب أن تكون أكبر من صفر');
+      final price = (row['price'] as num?)?.toDouble() ?? 0;
+      final discount = (row['discount'] as num?)?.toDouble() ?? 0;
+      final tax = (row['tax'] as num?)?.toDouble() ?? 0;
+      await DatabaseHelper.instance.update('sales_lines', {'qty':qty,'line_total':qty*price-discount+tax}, where:'id=? AND sales_id=?', whereArgs:[row['id'],_selectedId]);
+      final lines = await DatabaseHelper.instance.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
+      final subtotal = lines.fold<double>(0,(sum,line)=>sum+((line['line_total'] as num?)?.toDouble()??0));
+      final header = headers.first;
+      final invoiceDiscount = (header['discount'] as num?)?.toDouble() ?? 0;
+      final invoiceTax = (header['tax'] as num?)?.toDouble() ?? 0;
+      await DatabaseHelper.instance.update('sales_header', {'subtotal':subtotal,'net':(subtotal-invoiceDiscount+invoiceTax).clamp(0,double.infinity).toDouble()}, where:'id=?', whereArgs:[_selectedId]);
+      await context.read<AppProvider>().refresh();
+      if (mounted) setState(() {});
+    } catch (e) { _message('تعذر تعديل الكمية: $e'); }
+  }
+
   String? get _lineTable => switch(widget.screenKey) {'sales'=>'sales_lines','purchases'=>'purchases_lines','returns'=>'sales_return_lines','transfers'=>'warehouse_transfer_lines','damage'=>'damage_lines','countdocs'=>'inventory_items',_=>null};
   String? get _lineParent => switch(widget.screenKey) {'sales'=>'sales_id','purchases'=>'purchase_id','returns'=>'return_id','transfers'=>'transfer_id','damage'=>'document_id','countdocs'=>'document_id',_=>null};
   
@@ -1277,10 +1308,10 @@ class _DataScreenState extends State<DataScreen> {
           if (_selectedId != null && _lineTable != null) ...[
             const SizedBox(height: 12),
             FutureBuilder<List<Map<String,Object?>>>(
-              future: DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),
+              future: _loadLineRows(),
               builder: (context, lineSnapshot) {
                 final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
-                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
+                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k) && !(widget.screenKey == 'sales' && k == 'product_id')).toList();
                 return SectionCard(
                   title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
                   trailing: TextButton.icon(
@@ -1305,7 +1336,11 @@ class _DataScreenState extends State<DataScreen> {
                                       ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
                                       DataCell(
                                         Row(mainAxisSize: MainAxisSize.min, children: [
-                                        if (widget.screenKey == 'sales') IconButton(tooltip: 'تعديل السطر', onPressed: () => _editSalesLine(r), icon: const Icon(Icons.edit_outlined)),
+                                        if (widget.screenKey == 'sales') ...[
+                                          IconButton(tooltip: 'تقليل الكمية', onPressed: () => _adjustSalesLineQty(r, -1), icon: const Icon(Icons.remove_circle_outline)),
+                                          IconButton(tooltip: 'زيادة الكمية', onPressed: () => _adjustSalesLineQty(r, 1), icon: const Icon(Icons.add_circle_outline)),
+                                          IconButton(tooltip: 'تعديل السطر', onPressed: () => _editSalesLine(r), icon: const Icon(Icons.edit_outlined)),
+                                        ],
                                         IconButton(
                                           tooltip: 'حذف البند',
                                           onPressed: () => _deleteLine(r),
