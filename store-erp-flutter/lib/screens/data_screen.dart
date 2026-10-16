@@ -982,7 +982,7 @@ class _DataScreenState extends State<DataScreen> {
       await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
       final source = await DatabaseHelper.instance.databasePath;
       final stem = (_backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim())
-          .replaceAll(RegExp(r'[^a-zA-Z0-9_\\-ء-ي]'), '_');
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
       createdPath = p.join(folder.path, '${stem}_${DateTime.now().toIso8601String().replaceAll(':','-')}.db');
       await File(source).copy(createdPath);
       var status = 'نجاح — دون تحقق';
