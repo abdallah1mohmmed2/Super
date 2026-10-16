@@ -505,6 +505,7 @@ class _DataScreenState extends State<DataScreen> {
     final discountController = TextEditingController(text:'0');
     final taxController = TextEditingController(text:'0');
     final productSearchController = TextEditingController();
+    final lineNotesController = TextEditingController();
     final allUnits = await DatabaseHelper.instance.query('product_units', orderBy:'unit_name');
     List<Map<String,Object?>> unitOptions = allUnits.where((u)=>(u['product_id'] as num?)?.toInt()==productId).toList();
     int? selectedUnitId = unitOptions.isEmpty ? null : (unitOptions.first['id'] as num).toInt();
@@ -524,12 +525,13 @@ class _DataScreenState extends State<DataScreen> {
         if (isSale || isPurchase) ...[const SizedBox(height:10),Row(children:[Expanded(child:TextFormField(controller:discountController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الخصم'))),const SizedBox(width:10),Expanded(child:TextFormField(controller:taxController,keyboardType:const TextInputType.numberWithOptions(decimal:true),decoration:const InputDecoration(labelText:'الضريبة')))])],
         if (isPurchase) ...[const SizedBox(height:10),TextFormField(controller:batchController,decoration:const InputDecoration(labelText:'رقم التشغيلة (اختياري)')),const SizedBox(height:10),TextFormField(controller:productionController,decoration:const InputDecoration(labelText:'تاريخ الإنتاج YYYY-MM-DD')),const SizedBox(height:10),TextFormField(controller:expiryController,decoration:const InputDecoration(labelText:'تاريخ الانتهاء YYYY-MM-DD'))],
         if (isDamage) ...[const SizedBox(height:10),TextFormField(controller:batchController,decoration:const InputDecoration(labelText:'رقم الدفعة (اختياري)'))],
+        if (isSale) ...[const SizedBox(height:10),TextFormField(controller:lineNotesController,decoration:const InputDecoration(labelText:'ملاحظات السطر (اختياري)'))],
         if (isReturn) ...[const SizedBox(height:10),DropdownButtonFormField<String>(initialValue:returnCondition,decoration:const InputDecoration(labelText:'حالة الصنف المرتجع'),items:const ['سليم','تالف','غير قابل للبيع'].map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),onChanged:(v)=>setDialogState(()=>returnCondition=v??'سليم'))],
       ]))),
       actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:(){if(formKey.currentState!.validate()) Navigator.pop(ctx,true);},child:const Text('إضافة'))]
     )));
     
-    if (result != true || productId == null || !mounted) { qtyController.dispose(); priceController.dispose(); batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); return; }
+    if (result != true || productId == null || !mounted) { qtyController.dispose(); priceController.dispose(); batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); lineNotesController.dispose(); return; }
     
     try {
       final qty = double.parse(qtyController.text);
@@ -559,7 +561,7 @@ class _DataScreenState extends State<DataScreen> {
       }
       final selectedProduct = products.firstWhere((x)=>(x['id'] as num).toInt()==productId);
       final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'').toString()).firstWhere((name)=>name.isNotEmpty, orElse:()=>(selectedProduct['unit']??'قطعة').toString());
-      if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
+      if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'notes':lineNotesController.text.trim(),'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'production_date':production.isEmpty?null:production,'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isReturn) values.addAll({'qty':qty*unitFactor,'price':price/unitFactor,'condition':returnCondition});
       if (isTransfer) values.addAll({'factor':1,'unit':'قطعة'});
@@ -588,7 +590,7 @@ class _DataScreenState extends State<DataScreen> {
     } finally {
       qtyController.dispose(); 
       priceController.dispose(); 
-      batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose();
+      batchController.dispose(); expiryController.dispose(); productionController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose(); lineNotesController.dispose();
       if(mounted) setState((){});
     }
   }
@@ -596,6 +598,53 @@ class _DataScreenState extends State<DataScreen> {
   String? get _lineTable => switch(widget.screenKey) {'sales'=>'sales_lines','purchases'=>'purchases_lines','returns'=>'sales_return_lines','transfers'=>'warehouse_transfer_lines','damage'=>'damage_lines','countdocs'=>'inventory_items',_=>null};
   String? get _lineParent => switch(widget.screenKey) {'sales'=>'sales_id','purchases'=>'purchase_id','returns'=>'return_id','transfers'=>'transfer_id','damage'=>'document_id','countdocs'=>'document_id',_=>null};
   
+  Future<void> _openSalesInvoice() async {
+    if (widget.screenKey != 'sales') return;
+    try {
+      final invoices = await DatabaseHelper.instance.query('sales_header', orderBy: 'id DESC', limit: 150);
+      if (!mounted) return;
+      if (invoices.isEmpty) { _message('لا توجد فواتير مبيعات محفوظة'); return; }
+      final selected = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => AlertDialog(
+        title: const Text('فتح فاتورة مبيعات'),
+        content: SizedBox(width: 650, height: 500, child: ListView.separated(itemCount: invoices.length, separatorBuilder: (_, __) => const Divider(height: 1), itemBuilder: (ctx, index) { final row = invoices[index]; return ListTile(title: Text('فاتورة ${row['invoice_no'] ?? row['id']}'), subtitle: Text('التاريخ: ${row['invoice_date'] ?? '—'}  •  الحالة: ${row['status'] ?? 'مسودة'}  •  الصافي: ${((row['net'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}'), trailing: const Icon(Icons.chevron_left), onTap: () => Navigator.pop(ctx, row)); })),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء'))],
+      ));
+      if (selected != null && mounted) { _select(selected); setState(() {}); }
+    } catch (e) { _message('تعذر فتح الفواتير: $e'); }
+  }
+
+  Future<void> _editSalesLine(Map<String,Object?> row) async {
+    if (widget.screenKey != 'sales' || _selectedId == null) return;
+    final header = await DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (header.isEmpty || header.first['status'] == 'مرحل') { _message('لا يمكن تعديل بند فاتورة مرحلة'); return; }
+    final qty = TextEditingController(text: '${row['qty'] ?? 1}');
+    final price = TextEditingController(text: '${row['price'] ?? 0}');
+    final discount = TextEditingController(text: '${row['discount'] ?? 0}');
+    final tax = TextEditingController(text: '${row['tax'] ?? 0}');
+    final notes = TextEditingController(text: '${row['notes'] ?? ''}');
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تعديل سطر المبيعات'), content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+      TextField(controller: qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية')),
+      TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'سعر البيع')),
+      Row(children: [Expanded(child: TextField(controller: discount, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الخصم'))), const SizedBox(width: 8), Expanded(child: TextField(controller: tax, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الضريبة')))]),
+      TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظات السطر')),
+    ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حفظ التعديل'))]));
+    if (ok == true && mounted) {
+      try {
+        final q = double.tryParse(qty.text.trim()), p = double.tryParse(price.text.trim()), d = double.tryParse(discount.text.trim()) ?? 0, t = double.tryParse(tax.text.trim()) ?? 0;
+        if (q == null || p == null || q <= 0 || p < 0 || d < 0 || t < 0 || d > q * p) throw StateError('تحقق من الكمية والسعر والخصم والضريبة');
+        final total = q * p - d + t;
+        await DatabaseHelper.instance.update('sales_lines', {'qty': q, 'price': p, 'discount': d, 'tax': t, 'line_total': total, 'notes': notes.text.trim()}, where: 'id=? AND sales_id=?', whereArgs: [row['id'], _selectedId]);
+        final lines = await DatabaseHelper.instance.query('sales_lines', where: 'sales_id=?', whereArgs: [_selectedId]);
+        final subtotal = lines.fold<double>(0, (sum, line) => sum + ((line['line_total'] as num?)?.toDouble() ?? 0));
+        final h = header.first; final invoiceDiscount = (h['discount'] as num?)?.toDouble() ?? 0; final invoiceTax = (h['tax'] as num?)?.toDouble() ?? 0;
+        await DatabaseHelper.instance.update('sales_header', {'subtotal': subtotal, 'net': (subtotal - invoiceDiscount + invoiceTax).clamp(0, double.infinity).toDouble()}, where: 'id=?', whereArgs: [_selectedId]);
+        await context.read<AppProvider>().refresh();
+        if (mounted) { _message('تم تحديث سطر المبيعات'); setState(() {}); }
+      } catch (e) { _message('تعذر تعديل السطر: $e'); }
+    }
+    qty.dispose(); price.dispose(); discount.dispose(); tax.dispose(); notes.dispose();
+  }
+
   Future<void> _deleteLine(Map<String,Object?> row) async {
     final table=_lineTable, parent=_lineParent; 
     if(table==null||parent==null||_selectedId==null) return;
@@ -1121,7 +1170,8 @@ class _DataScreenState extends State<DataScreen> {
             title: config.title, 
             trailing: Wrap(spacing: 8, children: [
               if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
-              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
+              if (widget.screenKey == 'sales') ActionButton('فتح فاتورة', icon: Icons.folder_open, onPressed: _openSalesInvoice),
+              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton(widget.screenKey == 'sales' ? 'إضافة / بحث صنف' : 'إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
               if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
               if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
@@ -1136,7 +1186,13 @@ class _DataScreenState extends State<DataScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, 
               children: [
-                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
+                if (widget.screenKey == 'sales') ...[
+                  Card(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 18, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                    Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.person_outline), const SizedBox(width: 6), Text('الكاشير: ${context.watch<AppProvider>().currentUser}')]),
+                    Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.receipt_long_outlined), const SizedBox(width: 6), Text('الحالة: ${_selectedId == null ? 'مسودة جديدة' : 'فاتورة #$_selectedId'}')]),
+                    if (_controllers['cash_box_id']?.text.isNotEmpty == true) FutureBuilder<List<Map<String,Object?>>>(future: DatabaseHelper.instance.query('cash_sessions', where: "cash_box_id=? AND status='مفتوحة'", whereArgs: [int.tryParse(_controllers['cash_box_id']!.text) ?? -1], orderBy: 'id DESC', limit: 1), builder: (context, snapshot) { final rows = snapshot.data ?? const <Map<String,Object?>>[]; return Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.lock_open_outlined), const SizedBox(width: 6), Text(rows.isEmpty ? 'الجلسة: لا توجد جلسة مفتوحة' : 'الجلسة: ${rows.first['session_no'] ?? rows.first['id']}')]); }),
+                  ]))),
+                ] else if (widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
                 if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
                 if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
                 if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
@@ -1235,11 +1291,14 @@ class _DataScreenState extends State<DataScreen> {
                                     cells: [
                                       ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
                                       DataCell(
+                                        Row(mainAxisSize: MainAxisSize.min, children: [
+                                        if (widget.screenKey == 'sales') IconButton(tooltip: 'تعديل السطر', onPressed: () => _editSalesLine(r), icon: const Icon(Icons.edit_outlined)),
                                         IconButton(
                                           tooltip: 'حذف البند',
                                           onPressed: () => _deleteLine(r),
                                           icon: const Icon(Icons.delete_outline, color: Colors.red),
                                         ),
+                                        ]),
                                       ),
                                     ],
                                   );
