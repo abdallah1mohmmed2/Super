@@ -71,6 +71,7 @@ class _DataScreenState extends State<DataScreen> {
   void initState() {
     super.initState();
     _initControllers();
+    if (widget.screenKey == 'sales' && _controllers.containsKey('cashier')) _controllers['cashier']!.text = context.read<AppProvider>().currentUser;
     _loadReferenceOptions();
     if (widget.screenKey == 'backup') {
       _loadBackupSettings();
@@ -115,6 +116,9 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'cashier') {
+      return SizedBox(width: width, child: TextField(controller: _controllers[field], readOnly: true, decoration: const InputDecoration(labelText: 'الكاشير', prefixIcon: Icon(Icons.person_outline), helperText: 'يُحفظ تلقائيًا من المستخدم الحالي')));
+    }
     if (field == 'roles') {
       const roles = ['مدير نظام', 'مدير', 'محاسب', 'كاشير', 'مخزن'];
       final selected = _controllers[field]!.text
@@ -960,11 +964,12 @@ class _DataScreenState extends State<DataScreen> {
       _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
     }
     if (widget.screenKey == 'backup') _restorePathController.text = (row['file_path'] ?? '').toString();
+    if (widget.screenKey == 'sales') _loadReferenceOptions();
   }
   
   void _clear() { 
     for (final controller in _controllers.values) { controller.clear(); } 
-    setState(() { _selectedId = null; _applyDefaults(); }); 
+    setState(() { _selectedId = null; _applyDefaults(); if (widget.screenKey == 'sales' && _controllers.containsKey('cashier')) _controllers['cashier']!.text = context.read<AppProvider>().currentUser; }); 
   }
   
   void _message(String text) { 
@@ -1197,7 +1202,7 @@ class _DataScreenState extends State<DataScreen> {
                 if (widget.screenKey == 'sales') ...[
                   Card(color: Theme.of(context).colorScheme.surfaceContainerHighest, child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 18, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
                     Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.person_outline), const SizedBox(width: 6), Text('الكاشير: ${context.watch<AppProvider>().currentUser}')]),
-                    Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.receipt_long_outlined), const SizedBox(width: 6), Text('الحالة: ${_selectedId == null ? 'مسودة جديدة' : 'فاتورة #$_selectedId'}')]),
+                    if (_selectedId == null) const Row(mainAxisSize: MainAxisSize.min, children: [Icon(Icons.receipt_long_outlined), SizedBox(width: 6), Text('الحالة: مسودة جديدة')]) else FutureBuilder<List<Map<String,Object?>>>(future: DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [_selectedId], limit: 1), builder: (context, snapshot) { final rows = snapshot.data ?? const <Map<String,Object?>>[]; return Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.receipt_long_outlined), const SizedBox(width: 6), Text('الحالة: ${rows.isEmpty ? '—' : rows.first['status'] ?? 'مسودة'}')]); }),
                     if (_controllers['cash_box_id']?.text.isNotEmpty == true) FutureBuilder<List<Map<String,Object?>>>(future: DatabaseHelper.instance.query('cash_sessions', where: "cash_box_id=? AND status='مفتوحة'", whereArgs: [int.tryParse(_controllers['cash_box_id']!.text) ?? -1], orderBy: 'id DESC', limit: 1), builder: (context, snapshot) { final rows = snapshot.data ?? const <Map<String,Object?>>[]; return Row(mainAxisSize: MainAxisSize.min, children: [const Icon(Icons.lock_open_outlined), const SizedBox(width: 6), Text(rows.isEmpty ? 'الجلسة: لا توجد جلسة مفتوحة' : 'الجلسة: ${rows.first['session_no'] ?? rows.first['id']}')]); }),
                   ]))),
                 ] else if (widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
