@@ -1,4 +1,4 @@
-import 'dart:io'; // تم الإصلاح: كتابة import بحروف صغيرة
+import 'dart:io'; 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:csv/csv.dart';
@@ -32,10 +32,9 @@ class _DataScreenState extends State<DataScreen> {
   @override 
   void initState() {
     super.initState();
-    _initControllers(); // تم النقل إلى دالة منفصلة لإعادة الاستخدام
+    _initControllers(); 
   }
 
-  // تم الإصلاح: إضافة didUpdateWidget لمعالجة تغيير الشاشة دون إعادة بناء الويدجت بالكامل
   @override
   void didUpdateWidget(DataScreen oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -179,7 +178,7 @@ class _DataScreenState extends State<DataScreen> {
       }
       await _recalculateDraftTotals();
       
-      if (!mounted) return; // تم الإصلاح: حماية ضد الإغلاق أثناء المعالجة
+      if (!mounted) return; 
       await provider.refresh();
       _message('تم الحفظ بنجاح — رقم السجل $_selectedId');
       setState(() {});
@@ -288,7 +287,7 @@ class _DataScreenState extends State<DataScreen> {
         if (isReturn) { await DatabaseHelper.instance.update(headerTable, {'total':net}, where:'id=?', whereArgs:[_selectedId]); } else { await DatabaseHelper.instance.update(headerTable, {'subtotal':subtotal,'net':net}, where:'id=?', whereArgs:[_selectedId]); }
       }
       
-      if (!mounted) return; // تم الإصلاح: فحص السياق بعد الـ await
+      if (!mounted) return; 
       await context.read<AppProvider>().refresh();
       _message('تمت إضافة البند');
     } catch(e) {
@@ -330,7 +329,7 @@ class _DataScreenState extends State<DataScreen> {
         }
       }
       
-      if (!mounted) return; // تم الإصلاح: الحماية
+      if (!mounted) return; 
       await context.read<AppProvider>().refresh();
       _message('تم حذف البند');
       setState((){});
@@ -370,7 +369,7 @@ class _DataScreenState extends State<DataScreen> {
         _message('لا توجد عملية ترحيل معرفة لهذه الشاشة'); return; 
       }
       
-      if (!mounted) return; // تم الإصلاح: الحماية قبل سياق context
+      if (!mounted) return; 
       await context.read<AppProvider>().refresh();
       _message('تم ترحيل المستند وتسجيل العملية');
       setState((){});
@@ -481,7 +480,7 @@ class _DataScreenState extends State<DataScreen> {
       await source.copy(target);
       await DatabaseHelper.instance.database;
       
-      if (!mounted) return; // تم الإصلاح: الحماية قبل سياق context
+      if (!mounted) return; 
       await context.read<AppProvider>().refresh();
       _message('تمت استعادة النسخة بنجاح. يوصى بتسجيل الخروج ثم الدخول مجددًا.');
     } catch(e) { 
@@ -495,143 +494,145 @@ class _DataScreenState extends State<DataScreen> {
   @override 
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String,Object?>>>(
-      // تم الإصلاح: تغيير watch إلى read لمنع طلب قاعدة البيانات مئات المرات عند التمرير أو التعديل
       future: context.read<AppProvider>().load(config.table),
       builder: (context, snapshot) {
         final all = snapshot.data ?? <Map<String,Object?>>[];
         final rows = all.where((row) => _filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(_filter.toLowerCase()))).toList();
+        
         return ListView(padding: const EdgeInsets.all(18), children: [
-          SectionCard(title: config.title, trailing: Wrap(spacing: 8, children: [
-            if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
-            if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
-            if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
-            if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
-            if (!_readOnly) ActionButton('حفظ', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
-            if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
-          ]), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود. قبل الترحيل يتم التحقق من الرصيد وتسجيل حركة المخزون والقيد المحاسبي داخل معاملة ذرية.', style: TextStyle(color: Colors.deepOrange))),
-            if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
-            if (!_readOnly) Wrap(spacing: 12, runSpacing: 12, children: config.fields.map((field) => SizedBox(width: MediaQuery.sizeOf(context).width > 1050 ? 240 : MediaQuery.sizeOf(context).width * .72, child: TextField(controller: _controllers[field], obscureText: field == 'password_hash', decoration: InputDecoration(labelText: field == 'password_hash' && _selectedId != null ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)' : fieldLabel(field), prefixIcon: Icon(_icon(field)), hintText: _numericFields.contains(field) ? 'أدخل رقمًا' : null)))).toList()),
-            if (_selectedId != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text('وضع التعديل — السجل رقم $_selectedId', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
-          ])),
+          SectionCard(
+            title: config.title, 
+            trailing: Wrap(spacing: 8, children: [
+              if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
+              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
+              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
+              if (!_readOnly) ActionButton('حفظ', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
+              if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
+            ]), 
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, 
+              children: [
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود. قبل الترحيل يتم التحقق من الرصيد وتسجيل حركة المخزون والقيد المحاسبي داخل معاملة ذرية.', style: TextStyle(color: Colors.deepOrange))),
+                if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
+                if (!_readOnly) Wrap(spacing: 12, runSpacing: 12, children: config.fields.map((field) => SizedBox(width: MediaQuery.sizeOf(context).width > 1050 ? 240 : MediaQuery.sizeOf(context).width * .72, child: TextField(controller: _controllers[field], obscureText: field == 'password_hash', decoration: InputDecoration(labelText: field == 'password_hash' && _selectedId != null ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)' : fieldLabel(field), prefixIcon: Icon(_icon(field)), hintText: _numericFields.contains(field) ? 'أدخل رقمًا' : null)))).toList()),
+                if (_selectedId != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text('وضع التعديل — السجل رقم $_selectedId', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
+              ]
+            )
+          ),
+          
           if (_selectedId != null && _lineTable != null) ...[
             const SizedBox(height: 12),
-            FutureBuilder<List<Map<String,Object?>>>(future:DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),builder:(context,lineSnapshot){
-              final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
-              final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
-              return SectionCard(
-                title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
-                trailing: TextButton.icon(
-                  onPressed: _addLine,
-                  icon: const Icon(Icons.add),
-                  label: const Text('إضافة بند'),
-                ),
-                child: lineSnapshot.hasError
-                    ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')
-                    : lineRows.isEmpty
-                        ? const Text('لا توجد بنود لهذا المستند بعد')
-                        : SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: DataTable(
-                              columns: [
-                                ...keys.map(
-                                  (k) => DataColumn(label: Text(fieldLabel(k))),
-                                ),
-                                const DataColumn(label: Text('إجراء')),
-                              ],
-                              rows: lineRows.map((r) {
-                                return DataRow(
-                                  cells: [
-                                    ...keys.map(
-                                      (k) => DataCell(
-                                        Text((r[k] ?? '—').toString()),
-                                      ),
-                                    ),
-                                    DataCell(
-                                      IconButton(
-                                        tooltip: 'حذف البند',
-                                        onPressed: () => _deleteLine(r),
-                                        icon: const Icon(
-                                          Icons.delete_outline,
-                                          color: Colors.red,
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),
+              builder: (context, lineSnapshot) {
+                final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
+                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
+                return SectionCard(
+                  title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
+                  trailing: TextButton.icon(
+                    onPressed: _addLine,
+                    icon: const Icon(Icons.add),
+                    label: const Text('إضافة بند'),
+                  ),
+                  child: lineSnapshot.hasError
+                      ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')
+                      : lineRows.isEmpty
+                          ? const Text('لا توجد بنود لهذا المستند بعد')
+                          : SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: [
+                                  ...keys.map((k) => DataColumn(label: Text(fieldLabel(k)))),
+                                  const DataColumn(label: Text('إجراء')),
+                                ],
+                                rows: lineRows.map((r) {
+                                  return DataRow(
+                                    cells: [
+                                      ...keys.map((k) => DataCell(Text((r[k] ?? '—').toString()))),
+                                      DataCell(
+                                        IconButton(
+                                          tooltip: 'حذف البند',
+                                          onPressed: () => _deleteLine(r),
+                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
                                         ),
                                       ),
-                                    ),
-                                  ],
-                                );
-                              }).toList(),
-                            ),
-                          ),
-              );
-            }),
-          ],
-          const SizedBox(height: 16),
-          SectionCard(title: 'السجلات والبحث (${rows.length})', trailing: Wrap(spacing: 8, children: [ActionButton('تصدير CSV', icon: Icons.file_download_outlined, onPressed: () => _export(rows)), ActionButton('تحديث', icon: Icons.refresh, onPressed: () => setState(() {}))]), child: Column(children: [
-            TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ابحث في جميع حقول السجلات...'), onChanged: (v) => setState(() => _filter = v.trim())),
-            const SizedBox(height: 12),
-            if (_busy || snapshot.connectionState == ConnectionState.waiting) const LinearProgressIndicator(),
-            if (snapshot.hasError) Padding(padding: const EdgeInsets.all(16), child: Text('تعذر تحميل البيانات: ${snapshot.error}'))
-            else if (rows.isEmpty) const Padding(padding: EdgeInsets.all(24), child: Text('لا توجد سجلات مطابقة'))
-            else SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: DataTable(
-                columns: [
-                  ...config.columns.map(
-                    (field) => DataColumn(
-                      label: Text(fieldLabel(field)),
-                    ),
-                  ),
-                  const DataColumn(label: Text('إجراءات')),
-                ],
-                rows: rows.map((row) => DataRow(
-                  selected: row['id'] == _selectedId,
-                  onSelectChanged: (_) => _select(row),
-                  cells: [
-                    ...config.columns.map(
-                      (field) => DataCell(
-                        ConstrainedBox(
-                          constraints: const BoxConstraints(maxWidth: 220),
-                          child: Text(
-                            (row[field] ?? '—').toString(),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ),
-                    ),
-                    DataCell(
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            tooltip: _readOnly ? 'عرض' : 'تعديل',
-                            onPressed: () => _select(row),
-                            icon: Icon(
-                              _readOnly
-                                  ? Icons.visibility_outlined
-                                  : Icons.edit_outlined,
-                              color: Colors.blue,
-                            ),
-                          ),
-                          if (!_readOnly)
-                            IconButton(
-                              tooltip: 'حذف',
-                              onPressed: () => _delete(row),
-                              icon: const Icon(
-                                Icons.delete_outline,
-                                color: Colors.red,
+                                    ],
+                                  );
+                                }).toList(),
                               ),
                             ),
-                        ],
-                      ),
-                    ),
-                  ],
-                )).toList(),
-              ),
+                );
+              }
             ),
-          ]))))
-        ]);
-      },
-    );
+          ],
+          
+          const SizedBox(height: 16),
+          
+          // تم ترتيب هذا الجزء بالكامل لحل مشكلة الأقواس المتداخلة (])))),)
+          SectionCard(
+            title: 'السجلات والبحث (${rows.length})', 
+            trailing: Wrap(
+              spacing: 8, 
+              children: [
+                ActionButton('تصدير CSV', icon: Icons.file_download_outlined, onPressed: () => _export(rows)), 
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: () => setState(() {}))
+              ]
+            ), 
+            child: Column(
+              children: [
+                TextField(
+                  controller: _search, 
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ابحث في جميع حقول السجلات...'), 
+                  onChanged: (v) => setState(() => _filter = v.trim())
+                ),
+                const SizedBox(height: 12),
+                
+                if (_busy || snapshot.connectionState == ConnectionState.waiting) 
+                  const LinearProgressIndicator(),
+                  
+                if (snapshot.hasError) 
+                  Padding(padding: const EdgeInsets.all(16), child: Text('تعذر تحميل البيانات: ${snapshot.error}'))
+                else if (rows.isEmpty) 
+                  const Padding(padding: EdgeInsets.all(24), child: Text('لا توجد سجلات مطابقة'))
+                else 
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal, 
+                    child: DataTable(
+                      columns: [
+                        ...config.columns.map((field) => DataColumn(label: Text(fieldLabel(field)))), 
+                        const DataColumn(label: Text('إجراءات'))
+                      ], 
+                      rows: rows.map((row) => DataRow(
+                        selected: row['id'] == _selectedId, 
+                        onSelectChanged: (_) => _select(row), 
+                        cells: [
+                          ...config.columns.map((field) => DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 220), 
+                              child: Text((row[field] ?? '—').toString(), overflow: TextOverflow.ellipsis)
+                            )
+                          )), 
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min, 
+                              children: [
+                                IconButton(tooltip: _readOnly ? 'عرض' : 'تعديل', onPressed: () => _select(row), icon: Icon(_readOnly ? Icons.visibility_outlined : Icons.edit_outlined, color: Colors.blue)), 
+                                if (!_readOnly) 
+                                  IconButton(tooltip: 'حذف', onPressed: () => _delete(row), icon: const Icon(Icons.delete_outline, color: Colors.red))
+                              ]
+                            )
+                          )
+                        ]
+                      )).toList()
+                    )
+                  ) // نهاية SingleChildScrollView
+              ]
+            ) // نهاية Column
+          ), // نهاية SectionCard
+        ]); // نهاية ListView
+      }, // نهاية builder
+    ); // نهاية FutureBuilder
   }
   
   IconData _icon(String field) { if (field.contains('name')) return Icons.badge_outlined; if (field.contains('price') || field == 'net' || field == 'balance' || field == 'amount') return Icons.payments_outlined; if (field.contains('date')) return Icons.calendar_month_outlined; if (field.contains('phone') || field == 'mobile') return Icons.phone_outlined; if (field.contains('qty')) return Icons.inventory_2_outlined; return Icons.edit_note; }
