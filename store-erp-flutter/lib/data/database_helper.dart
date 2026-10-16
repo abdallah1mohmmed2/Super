@@ -299,6 +299,11 @@ class DatabaseHelper {
       final saleRows = await txn.query('sales_header', where: 'id=?', whereArgs: [saleId], limit: 1);
       if (saleRows.isEmpty) throw StateError('فاتورة المبيعات غير موجودة');
       final sale = saleRows.first;
+      final sessionId = (sale['cash_session_id'] as num?)?.toInt();
+      if (sessionId != null) {
+        final sessions = await txn.query('cash_sessions', where:'id=? AND cash_box_id=? AND status=?', whereArgs:[sessionId, cashBoxId, 'مفتوحة'], limit:1);
+        if (sessions.isEmpty) throw StateError('جلسة الصندوق غير مفتوحة أو لا تتبع الصندوق المحدد');
+      }
       final approvalCustomerId = (sale['customer_id'] as num?)?.toInt();
       if (approvalCustomerId != null) {
         final approvalCustomers = await txn.query(
