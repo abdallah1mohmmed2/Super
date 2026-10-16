@@ -50,7 +50,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
     return null;
   }
 
-  Map<String, Object?>? get _openSession {
+  Map<String, Object?>? get _activeSession {
     for (final session in _sessions) {
       if ((session['cash_box_id'] as num?)?.toInt() == _boxId && session['status'] == 'مفتوحة') return session;
     }
@@ -125,7 +125,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       _message('لا يمكن فتح جلسة لصندوق غير نشط');
       return;
     }
-    if (_openSession != null) {
+    if (_activeSession != null) {
       _message('توجد جلسة مفتوحة لهذا الصندوق بالفعل');
       return;
     }
@@ -157,7 +157,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   }
 
   Future<void> _closeSession() async {
-    final session = _openSession;
+    final session = _activeSession;
     final box = _selectedBox;
     if (session == null || box == null) {
       _message('لا توجد جلسة مفتوحة لهذا الصندوق');
@@ -253,7 +253,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   Widget build(BuildContext context) {
     final visibleBoxes = _boxes.where((box) => _filter.isEmpty || (box['name'] ?? '').toString().toLowerCase().contains(_filter.toLowerCase())).toList();
     final box = _selectedBox;
-    final session = _openSession;
+    final session = _activeSession;
     final expected = session == null ? null : (session['opening_balance'] as num?)?.toDouble();
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
