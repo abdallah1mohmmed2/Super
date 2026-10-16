@@ -130,7 +130,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
                 : TextInputType.text,
           ),
         );
-      }).toList())),
+      }).toList()))),
       actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('إلغاء')),FilledButton(onPressed:(){
         final values=<String,Object?>{};
         for(final f in fields){
