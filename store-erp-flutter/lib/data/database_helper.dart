@@ -17,7 +17,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 8,
+        version: 9,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -30,7 +30,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 8, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 9, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -98,6 +98,24 @@ class DatabaseHelper {
       )''');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_cash_sessions_box_status ON cash_sessions(cash_box_id, status)');
     }
+    if (oldVersion < 9) {
+      await db.execute('''CREATE TABLE IF NOT EXISTS approval_requests(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        entity_type TEXT NOT NULL,
+        entity_id INTEGER NOT NULL,
+        request_type TEXT NOT NULL,
+        reference TEXT,
+        requested_by TEXT,
+        request_date TEXT NOT NULL,
+        request_notes TEXT,
+        status TEXT NOT NULL DEFAULT 'معلق',
+        decision_notes TEXT,
+        decided_by TEXT,
+        decided_at TEXT
+      )''');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status, request_date)');
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_entity ON approval_requests(entity_type, entity_id)');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -137,6 +155,7 @@ class DatabaseHelper {
       '''CREATE TABLE app_accounts(account_code TEXT PRIMARY KEY, account_name TEXT NOT NULL, account_type TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)''',
       '''CREATE TABLE daily_closings(id INTEGER PRIMARY KEY AUTOINCREMENT, close_date TEXT NOT NULL UNIQUE, sales_total REAL NOT NULL DEFAULT 0, sales_paid REAL NOT NULL DEFAULT 0, purchases_total REAL NOT NULL DEFAULT 0, cash_total REAL NOT NULL DEFAULT 0, closed_by TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''',
       '''CREATE TABLE cash_sessions(id INTEGER PRIMARY KEY AUTOINCREMENT, cash_box_id INTEGER NOT NULL REFERENCES cash_boxes(id), session_no TEXT UNIQUE NOT NULL, opened_at TEXT NOT NULL, closed_at TEXT, opening_balance REAL NOT NULL DEFAULT 0, expected_balance REAL, actual_balance REAL, difference REAL, status TEXT NOT NULL DEFAULT 'مفتوحة', opened_by TEXT, closed_by TEXT, notes TEXT)''',
+      '''CREATE TABLE approval_requests(id INTEGER PRIMARY KEY AUTOINCREMENT, entity_type TEXT NOT NULL, entity_id INTEGER NOT NULL, request_type TEXT NOT NULL, reference TEXT, requested_by TEXT, request_date TEXT NOT NULL, request_notes TEXT, status TEXT NOT NULL DEFAULT 'معلق', decision_notes TEXT, decided_by TEXT, decided_at TEXT)''',
     ];
     for (final sql in statements) { await db.execute(sql); }
     await db.execute('CREATE INDEX idx_products_name ON products(name)');
@@ -146,6 +165,8 @@ class DatabaseHelper {
     await db.execute('CREATE INDEX idx_purchases_date ON purchases_header(invoice_date)');
     await db.execute('CREATE INDEX idx_document_payments_parent ON document_payments(document_type, document_id)');
     await db.execute('CREATE INDEX idx_cash_sessions_box_status ON cash_sessions(cash_box_id, status)');
+    await db.execute('CREATE INDEX idx_approval_requests_status ON approval_requests(status, request_date)');
+    await db.execute('CREATE INDEX idx_approval_requests_entity ON approval_requests(entity_type, entity_id)');
     await db.insert('users', {'username':'admin','full_name':'مدير النظام','password_hash':'admin','roles':'مدير نظام','is_active':1});
     await db.insert('warehouses', {'name':'المخزن الرئيسي'});
     await db.insert('cash_boxes', {'name':'الصندوق الرئيسي','balance':0});
