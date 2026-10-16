@@ -52,6 +52,14 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
     return null;
   }
 
+  int? _firstOtherBoxId(int? exceptId) {
+    for (final row in _boxes) {
+      final id = (row['id'] as num).toInt();
+      if (id != exceptId) return id;
+    }
+    return null;
+  }
+
   Future<void> _reload() async {
     try {
       final boxes = await _db.query('cash_boxes', where: 'is_active=1', orderBy: 'name');
@@ -64,7 +72,7 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
           _fromId = _boxes.isEmpty ? null : (_boxes.first['id'] as num).toInt();
         }
         if (_toId == null || !_boxes.any((b) => (b['id'] as num).toInt() == _toId) || _toId == _fromId) {
-          _toId = _boxes.where((b) => (b['id'] as num).toInt() != _fromId).map((b) => (b['id'] as num).toInt()).firstOrNull;
+          _toId = _firstOtherBoxId(_fromId);
         }
       });
     } catch (e) {
@@ -202,7 +210,7 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
           const SizedBox(height: 12),
           Wrap(spacing: 12, runSpacing: 12, children: [
             SizedBox(width: 260, child: TextField(controller: _number, decoration: const InputDecoration(labelText: 'رقم التحويل', prefixIcon: Icon(Icons.numbers)))),
-            SizedBox(width: 260, child: DropdownButtonFormField<int>(value: _boxes.any((b) => (b['id'] as num).toInt() == _fromId) ? _fromId : null, decoration: const InputDecoration(labelText: 'من صندوق'), items: _boxes.map((b) => DropdownMenuItem(value: (b['id'] as num).toInt(), child: Text((b['name'] ?? '').toString()))).toList(), onChanged: isPosted ? null : (v) => setState(() { _fromId = v; if (_toId == v) _toId = _boxes.where((b) => (b['id'] as num).toInt() != v).map((b) => (b['id'] as num).toInt()).firstOrNull; }))),
+            SizedBox(width: 260, child: DropdownButtonFormField<int>(value: _boxes.any((b) => (b['id'] as num).toInt() == _fromId) ? _fromId : null, decoration: const InputDecoration(labelText: 'من صندوق'), items: _boxes.map((b) => DropdownMenuItem(value: (b['id'] as num).toInt(), child: Text((b['name'] ?? '').toString()))).toList(), onChanged: isPosted ? null : (v) => setState(() { _fromId = v; if (_toId == v) _toId = _firstOtherBoxId(v); }))),
             SizedBox(width: 260, child: DropdownButtonFormField<int>(value: _boxes.any((b) => (b['id'] as num).toInt() == _toId) ? _toId : null, decoration: const InputDecoration(labelText: 'إلى صندوق'), items: _boxes.where((b) => (b['id'] as num).toInt() != _fromId).map((b) => DropdownMenuItem(value: (b['id'] as num).toInt(), child: Text((b['name'] ?? '').toString()))).toList(), onChanged: isPosted ? null : (v) => setState(() => _toId = v))),
             SizedBox(width: 220, child: OutlinedButton.icon(onPressed: isPosted || _busy ? null : () async { final picked = await showDatePicker(context: context, initialDate: _date, firstDate: DateTime(2000), lastDate: DateTime(2100)); if (picked != null && mounted) setState(() => _date = picked); }, icon: const Icon(Icons.calendar_month), label: Text('التاريخ: ${_dateText(_date)}'))),
             SizedBox(width: 220, child: TextField(controller: _amount, readOnly: isPosted, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'المبلغ', prefixIcon: Icon(Icons.payments_outlined)))),
