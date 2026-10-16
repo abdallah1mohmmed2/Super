@@ -277,4 +277,85 @@ void main() {
     expect(returns.single['status'], 'مرحل');
     await expectJournalBalanced('SALES_RETURN', returnId);
   });
+
+  test('return can settle to customer credit without creating a negative balance',
+      () async {
+    final db = await helper.database;
+    final productId = await createProduct(cost: 4, price: 10);
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    final saleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-CREDIT-SALE-1',
+      'invoice_date': today(),
+      'customer_id': 1,
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'net': 20,
+      'paid': 0,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': saleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 2,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 20,
+    });
+    await helper.postSale(
+      saleId: saleId,
+      warehouseId: 1,
+      cashBoxId: 1,
+      customerId: 1,
+      lines: [
+        {'product_id': productId, 'qty': 2.0, 'factor': 1.0},
+      ],
+      net: 20,
+      paid: 0,
+    );
+
+    final returnId = await db.insert('sales_returns', {
+      'return_no': 'TEST-CREDIT-RETURN-1',
+      'sales_id': saleId,
+      'customer_id': 1,
+      'warehouse_id': 1,
+      'return_date': today(),
+      'total': 10,
+      'status': 'مسودة',
+      'reason': 'اختبار تسوية على الرصيد',
+    });
+    await db.insert('sales_return_lines', {
+      'return_id': returnId,
+      'product_id': productId,
+      'qty': 1,
+      'price': 10,
+      'condition': 'سليم',
+    });
+    await db.insert('document_payments', {
+      'document_type': 'returns',
+      'document_id': returnId,
+      'payment_date': today(),
+      'method': 'على الرصيد',
+      'amount': 10,
+    });
+
+    await helper.postSalesReturn(
+      returnId: returnId,
+      lines: [
+        {'product_id': productId, 'qty': 1.0, 'price': 10.0, 'good': 1.0},
+      ],
+    );
+
+    final customers = await helper.query('customers', where: 'id=?', whereArgs: [1]);
+    final cashBoxes = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    expect((customers.single['balance'] as num).toDouble(), 10);
+    expect((cashBoxes.single['balance'] as num).toDouble(), 0);
+    await expectJournalBalanced('SALES_RETURN', returnId);
+  });
 }
