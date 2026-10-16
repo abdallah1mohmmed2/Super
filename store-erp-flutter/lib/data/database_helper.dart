@@ -338,6 +338,9 @@ class DatabaseHelper {
         cashRefund = settlementRows.where((row) => row['method'] != 'على الرصيد').fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
         if ((dueReduction + cashRefund - total).abs() > 0.005) throw StateError('أكمل تسوية المرتجع؛ يجب أن يساوي مجموع الدفعات إجمالي المرتجع');
         if (dueReduction > 0 && customerId == null) throw StateError('لا يمكن تحويل مبلغ إلى رصيد عميل دون تحديد العميل');
+        if (customerId != null && dueReduction > currentCustomerBalance + 0.005) {
+          throw StateError('مبلغ التسوية على رصيد العميل يتجاوز رصيده الحالي');
+        }
       } else {
         dueReduction=customerId==null?0.0:total.clamp(0,outstanding.clamp(0,currentCustomerBalance)).toDouble();
         cashRefund=total-dueReduction;
