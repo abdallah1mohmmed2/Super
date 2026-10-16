@@ -285,6 +285,11 @@ class _DataScreenState extends State<DataScreen> {
     if (_controllers.containsKey('payment_method') && _controllers['payment_method']!.text.isEmpty) {
       _controllers['payment_method']!.text = 'نقدي';
     }
+    if (['sales','purchases'].contains(widget.screenKey)) {
+      for (final field in ['discount','tax']) {
+        if (_controllers.containsKey(field) && _controllers[field]!.text.isEmpty) _controllers[field]!.text = '0';
+      }
+    }
     if (_controllers.containsKey('unit') && _controllers['unit']!.text.isEmpty) {
       _controllers['unit']!.text = 'قطعة';
     }
@@ -626,7 +631,9 @@ class _DataScreenState extends State<DataScreen> {
       final price = (row['price'] as num?)?.toDouble() ?? 0;
       final discount = (row['discount'] as num?)?.toDouble() ?? 0;
       final tax = (row['tax'] as num?)?.toDouble() ?? 0;
-      await DatabaseHelper.instance.update('sales_lines', {'qty':qty,'line_total':qty*price-discount+tax}, where:'id=? AND sales_id=?', whereArgs:[row['id'],_selectedId]);
+      final lineTotal = qty*price-discount+tax;
+      if (lineTotal < 0) throw StateError('الخصم أكبر من قيمة السطر');
+      await DatabaseHelper.instance.update('sales_lines', {'qty':qty,'line_total':lineTotal}, where:'id=? AND sales_id=?', whereArgs:[row['id'],_selectedId]);
       final lines = await DatabaseHelper.instance.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
       final subtotal = lines.fold<double>(0,(sum,line)=>sum+((line['line_total'] as num?)?.toDouble()??0));
       final header = headers.first;
