@@ -723,6 +723,35 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  Future<void> _refreshSalesScreen() async {
+    await context.read<AppProvider>().refresh();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _saveAndPostSales() async {
+    if (widget.screenKey != 'sales') return;
+    for (final field in ['invoice_no','invoice_date','warehouse_id','cash_box_id']) {
+      if ((_controllers[field]?.text.trim() ?? '').isEmpty) { _message('أكمل الحقل «${fieldLabel(field)}» قبل الحفظ والترحيل'); return; }
+    }
+    if (double.tryParse(_controllers['discount']?.text.trim() ?? '0') == null || double.tryParse(_controllers['tax']?.text.trim() ?? '0') == null) {
+      _message('تحقق من قيمة الخصم والضريبة'); return;
+    }
+    await _save();
+    if (!mounted || _selectedId == null) return;
+    final rows = await DatabaseHelper.instance.query('sales_header', where:'id=?', whereArgs:[_selectedId], limit:1);
+    if (rows.isEmpty) { _message('تعذر العثور على الفاتورة بعد الحفظ'); return; }
+    final header = rows.first;
+    for (final field in ['invoice_no','invoice_date','customer_id','warehouse_id','cash_box_id','cash_session_id','cashier','payment_method','discount','tax','notes']) {
+      final raw = _controllers[field]?.text.trim() ?? '';
+      if (raw.isEmpty) continue;
+      if (_numericFields.contains(field)) {
+        final value = num.tryParse(raw);
+        if (value == null || ((header[field] as num?)?.toDouble() ?? 0) != value.toDouble()) { _message('لم يتم حفظ قيمة «${fieldLabel(field)}»؛ راجعها قبل الترحيل'); return; }
+      } else if ((header[field] ?? '').toString() != raw) { _message('لم يتم حفظ قيمة «${fieldLabel(field)}»؛ راجعها قبل الترحيل'); return; }
+    }
+    await _postSelected();
+  }
+
   Future<void> _postSelected() async {
     if (_selectedId == null) { _message('حدد مستندًا أولاً'); return; }
     final db = DatabaseHelper.instance;
@@ -1214,9 +1243,12 @@ class _DataScreenState extends State<DataScreen> {
             title: config.title, 
             trailing: Wrap(spacing: 8, children: [
               if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
-              if (widget.screenKey == 'sales') ActionButton('فتح فاتورة', icon: Icons.folder_open, onPressed: _openSalesInvoice),
+              if (widget.screenKey == 'sales') ...[
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: _refreshSalesScreen),
+                ActionButton('فتح فاتورة', icon: Icons.folder_open, onPressed: _openSalesInvoice),
+              ],
               if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton(widget.screenKey == 'sales' ? 'إضافة / بحث صنف' : 'إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
-              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton(widget.screenKey == 'sales' ? 'حفظ وترحيل' : 'ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: widget.screenKey == 'sales' ? _saveAndPostSales : _postSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
               if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
