@@ -97,8 +97,39 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     final result=await showDialog<Map<String,Object?>?>(context:context,builder:(c)=>AlertDialog(
       title:Text(title),
       content:SizedBox(width:400,child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:fields.map((f){
-        final label=switch(f){'unit_name'=>'اسم الوحدة','factor'=>'معامل التحويل','sale_price'=>'سعر البيع','barcode'=>'الباركود','unit_id'=>'معرف الوحدة','warehouse_id'=>'معرف المخزن','minimum'=>'حد النقص','maximum'=>'الحد الأعلى','batch_no'=>'رقم الدفعة','expiry_date'=>'تاريخ الصلاحية YYYY-MM-DD','qty'=>'الكمية',_=>f};
-        return Padding(padding:const EdgeInsets.only(bottom:8),child:TextField(controller:controllers[f],decoration:InputDecoration(labelText:label),keyboardType:['factor','sale_price','minimum','maximum','qty','unit_id','warehouse_id'].contains(f)?const TextInputType.numberWithOptions(decimal:true):TextInputType.text));
+        if (f == 'warehouse_id' || f == 'unit_id') {
+          final options = f == 'warehouse_id' ? warehouses : units;
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: DropdownButtonFormField<int>(
+              value: int.tryParse(controllers[f]!.text),
+              isExpanded: true,
+              decoration: InputDecoration(labelText: f == 'warehouse_id' ? 'المخزن' : 'وحدة الصنف'),
+              items: options.map((option) => DropdownMenuItem<int>(
+                value: (option['id'] as num).toInt(),
+                child: Text((option[f == 'warehouse_id' ? 'name' : 'unit_name'] ?? '').toString()),
+              )).toList(),
+              onChanged: (value) => controllers[f]!.text = value?.toString() ?? '',
+            ),
+          );
+        }
+        final label = switch (f) {
+          'unit_name' => 'اسم الوحدة', 'factor' => 'معامل التحويل',
+          'sale_price' => 'سعر البيع', 'barcode' => 'الباركود',
+          'minimum' => 'حد النقص', 'maximum' => 'الحد الأعلى',
+          'batch_no' => 'رقم الدفعة', 'expiry_date' => 'تاريخ الصلاحية YYYY-MM-DD',
+          'qty' => 'الكمية', _ => f,
+        };
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 8),
+          child: TextField(
+            controller: controllers[f],
+            decoration: InputDecoration(labelText: label),
+            keyboardType: ['factor', 'sale_price', 'minimum', 'maximum', 'qty'].contains(f)
+                ? const TextInputType.numberWithOptions(decimal: true)
+                : TextInputType.text,
+          ),
+        );
       })).toList())),
       actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('إلغاء')),FilledButton(onPressed:(){
         final values=<String,Object?>{};
