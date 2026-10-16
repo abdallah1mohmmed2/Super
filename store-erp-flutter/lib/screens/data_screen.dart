@@ -397,7 +397,7 @@ class _DataScreenState extends State<DataScreen> {
       final lineTax = double.tryParse(taxController.text) ?? 0;
       if (lineDiscount < 0 || lineTax < 0) throw StateError('الخصم والضريبة لا يمكن أن يكونا سالبين');
       final expiry = expiryController.text.trim();
-      if (isPurchase && expiry.isNotEmpty && !RegExp(r'^\\d{4}-\\d{2}-\\d{2}$').hasMatch(expiry)) throw StateError('تاريخ الانتهاء يجب أن يكون بصيغة YYYY-MM-DD');
+      if (isPurchase && expiry.isNotEmpty && !RegExp(r'^\d{4}-\d{2}-\d{2}.hasMatch(expiry)) throw StateError('تاريخ الانتهاء يجب أن يكون بصيغة YYYY-MM-DD');
       final table = isSale ? 'sales_lines' : isPurchase ? 'purchases_lines' : isTransfer ? 'warehouse_transfer_lines' : isReturn ? 'sales_return_lines' : isCountDoc ? 'inventory_items' : 'damage_lines';
       final parentField = isSale ? 'sales_id' : isPurchase ? 'purchase_id' : isTransfer ? 'transfer_id' : isReturn ? 'return_id' : 'document_id';
       final values = <String,Object?>{parentField:_selectedId,'product_id':productId,'qty':qty};
@@ -413,9 +413,611 @@ class _DataScreenState extends State<DataScreen> {
         if(already.isNotEmpty) throw StateError('الصنف موجود مسبقًا في مستند الجرد');
         values.remove('qty'); values.addAll({'book_qty':bookQty,'count_qty':qty,'count_qty2':qty,'difference':qty-bookQty,'difference_cost':0});
       }
-      final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>u['unit_name']).firstWhere((_)=>true, orElse:()=> 'قطعة');
+      final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'قطعة').toString()).firstWhere((_)=>true, orElse:()=> 'قطعة');
       if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
-      if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+taxController.text.trim().isEmpty?0:qty*price-lineDiscount+lineTax)}); }
+      if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
+      if (isReturn) values.addAll({'price':price,'condition':returnCondition});
+      if (isTransfer) values.addAll({'factor':1,'unit':'قطعة'});
+      if (isDamage) { final prod=products.firstWhere((x)=>(x['id'] as num).toInt()==productId); values['estimated_cost']=((prod['cost_price'] as num?)?.toDouble() ?? 0); }
+      if (isCountDoc) { final prod=products.firstWhere((x)=>(x['id'] as num).toInt()==productId); values['difference_cost']=(qty-((values['book_qty'] as num?)?.toDouble()??0))*((prod['cost_price'] as num?)?.toDouble()??0); }
+      
+      await DatabaseHelper.instance.insert(table, values);
+      
+      if (isSale || isPurchase || isReturn) {
+        final headerTable = isSale ? 'sales_header' : isPurchase ? 'purchases_header' : 'sales_returns';
+        final parentKey = isSale ? 'sales_id' : isPurchase ? 'purchase_id' : 'return_id';
+        final existing = await DatabaseHelper.instance.query(table, where:'$parentKey=?', whereArgs:[_selectedId]);
+        final subtotal = existing.fold<double>(0,(sum,row)=>sum+((row['line_total'] as num?)?.toDouble() ?? (((row['qty'] as num?)?.toDouble() ?? 0)*((row['price'] as num?)?.toDouble() ?? 0))));
+        final headerRows=await DatabaseHelper.instance.query(headerTable,where:'id=?',whereArgs:[_selectedId],limit:1);
+        final discount=headerRows.isEmpty?0.0:((headerRows.first['discount'] as num?)?.toDouble() ?? 0);
+        final tax=headerRows.isEmpty?0.0:((headerRows.first['tax'] as num?)?.toDouble() ?? 0);
+        final net=(subtotal-discount+tax).clamp(0,double.infinity).toDouble();
+        if (isReturn) { await DatabaseHelper.instance.update(headerTable, {'total':net}, where:'id=?', whereArgs:[_selectedId]); } else { await DatabaseHelper.instance.update(headerTable, {'subtotal':subtotal,'net':net}, where:'id=?', whereArgs:[_selectedId]); }
+      }
+      
+      if (!mounted) return; 
+      await context.read<AppProvider>().refresh();
+      _message('تمت إضافة البند');
+    } catch(e) {
+      _message('تعذر إضافة البند: $e');
+    } finally {
+      qtyController.dispose(); 
+      priceController.dispose(); 
+      batchController.dispose(); expiryController.dispose(); discountController.dispose(); taxController.dispose(); productSearchController.dispose();
+      if(mounted) setState((){});
+    }
+  }
+
+  String? get _lineTable => switch(widget.screenKey) {'sales'=>'sales_lines','purchases'=>'purchases_lines','returns'=>'sales_return_lines','transfers'=>'warehouse_transfer_lines','damage'=>'damage_lines','countdocs'=>'inventory_items',_=>null};
+  String? get _lineParent => switch(widget.screenKey) {'sales'=>'sales_id','purchases'=>'purchase_id','returns'=>'return_id','transfers'=>'transfer_id','damage'=>'document_id','countdocs'=>'document_id',_=>null};
+  
+  Future<void> _deleteLine(Map<String,Object?> row) async {
+    final table=_lineTable, parent=_lineParent; 
+    if(table==null||parent==null||_selectedId==null) return;
+    
+    final parentRows = await DatabaseHelper.instance.query(config.table,where:'id=?',whereArgs:[_selectedId],limit:1);
+    if(parentRows.isNotEmpty && parentRows.first['status']=='مرحل'){ _message('لا يمكن تعديل بنود مستند مرحل'); return; }
+    
+    final yes = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف بند'),content:const Text('هل تريد حذف هذا البند من المستند؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
+    if(yes!=true || !mounted) return;
+    
+    try {
+      await DatabaseHelper.instance.delete(table,where:'id=? AND $parent=?',whereArgs:[row['id'],_selectedId]);
+      if(['sales','purchases','returns'].contains(widget.screenKey)) {
+        final parentKey=_lineParent!; 
+        final rows=await DatabaseHelper.instance.query(table,where:'$parentKey=?',whereArgs:[_selectedId]);
+        final total=rows.fold<double>(0,(sum,r)=>sum+((r['line_total'] as num?)?.toDouble() ?? (((r['qty'] as num?)?.toDouble()??0)*((r['price'] as num?)?.toDouble()??0))));
+        if(widget.screenKey=='returns') {
+          await DatabaseHelper.instance.update('sales_returns',{'total':total},where:'id=?',whereArgs:[_selectedId]);
+        } else {
+          final h=(await DatabaseHelper.instance.query(widget.screenKey=='sales'?'sales_header':'purchases_header',where:'id=?',whereArgs:[_selectedId],limit:1)).first;
+          final discount=(h['discount'] as num?)?.toDouble()??0;
+          final tax=(h['tax'] as num?)?.toDouble()??0;
+          await DatabaseHelper.instance.update(widget.screenKey=='sales'?'sales_header':'purchases_header',{'subtotal':total,'net':(total-discount+tax).clamp(0,double.infinity)},where:'id=?',whereArgs:[_selectedId]);
+        }
+      }
+      
+      if (!mounted) return; 
+      await context.read<AppProvider>().refresh();
+      _message('تم حذف البند');
+      setState((){});
+    } catch(e) {
+      _message('تعذر حذف البند: $e');
+    }
+  }
+
+  Future<void> _postSelected() async {
+    if (_selectedId == null) { _message('حدد مستندًا أولاً'); return; }
+    final db = DatabaseHelper.instance;
+    try {
+      final headerRows = await db.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1);
+      if (headerRows.isEmpty) { _message('المستند المحدد غير موجود'); return; }
+      final header = headerRows.first;
+      
+      if (widget.screenKey == 'sales') {
+        if (header['warehouse_id'] == null || header['cash_box_id'] == null) {
+          throw StateError('حدد المخزن والصندوق في رأس فاتورة المبيعات قبل الترحيل');
+        }
+        final lines = await db.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
+        await db.postSale(saleId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, customerId:(header['customer_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1)}).toList());
+      } else if (widget.screenKey == 'returns') {
+        final lines = await db.query('sales_return_lines', where:'return_id=?', whereArgs:[_selectedId]);
+        await db.postSalesReturn(returnId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'price':(r['price'] as num).toDouble(),'good':r['condition']=='سليم' ? 1.0 : 0.0}).toList());
+      } else if (widget.screenKey == 'purchases') {
+        if (header['warehouse_id'] == null || header['cash_box_id'] == null || header['supplier_id'] == null) {
+          throw StateError('حدد المخزن والصندوق والمورد في رأس فاتورة المشتريات قبل الترحيل');
+        }
+        final lines = await db.query('purchases_lines', where:'purchase_id=?', whereArgs:[_selectedId]);
+        await db.postPurchase(purchaseId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, supplierId:(header['supplier_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1),'cost':(r['cost'] as num).toDouble()}).toList());
+      } else if (widget.screenKey == 'transfers') {
+        if (header['from_warehouse_id'] == null || header['to_warehouse_id'] == null) {
+          throw StateError('حدد المخزن المصدر والمخزن المستلم قبل الترحيل');
+        }
+        final lines = await db.query('warehouse_transfer_lines', where:'transfer_id=?', whereArgs:[_selectedId]);
+        await db.transferWarehouse(transferId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1)}).toList());
+      } else if (widget.screenKey == 'cashtransfers') {
+        await db.transferCash(transferId:_selectedId!);
+      } else if (widget.screenKey == 'damage') {
+        final lines = await db.query('damage_lines', where:'document_id=?', whereArgs:[_selectedId]);
+        await db.postDamage(documentId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble()}).toList());
+      } else if (widget.screenKey == 'countdocs') {
+        await db.postInventoryCount(documentId:_selectedId!);
+      } else { 
+        _message('لا توجد عملية ترحيل معرفة لهذه الشاشة'); return; 
+      }
+      
+      if (!mounted) return; 
+      await context.read<AppProvider>().refresh();
+      _message('تم ترحيل المستند وتسجيل العملية');
+      setState((){});
+    } catch(e) {
+      _message('فشل الترحيل: $e');
+    }
+  }
+
+  String get _paymentDocumentType => widget.screenKey == 'sales' ? 'sales' : widget.screenKey == 'purchases' ? 'purchases' : 'returns';
+
+  Future<void> _syncPaidAmount() async {
+    if (_selectedId == null || widget.screenKey == 'returns') return;
+    final payments = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
+    final paid = payments.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+    final table = widget.screenKey == 'sales' ? 'sales_header' : 'purchases_header';
+    await DatabaseHelper.instance.update(table, {'paid': paid}, where: 'id=?', whereArgs: [_selectedId]);
+  }
+
+  Future<void> _addPayment() async {
+    if (_selectedId == null || !['sales','purchases','returns'].contains(widget.screenKey)) { _message('احفظ المستند وحدده أولاً'); return; }
+    final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
+    final headerRows = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (headerRows.isEmpty) { _message('المستند غير موجود'); return; }
+    if (headerRows.first['status'] == 'مرحل') { _message('لا يمكن تعديل دفعات مستند مرحل'); return; }
+    final amountController = TextEditingController();
+    final referenceController = TextEditingController();
+    final notesController = TextEditingController();
+    String method = 'نقدي';
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+      title: Text(widget.screenKey == 'returns' ? 'إضافة تسوية / دفعة مرتجع' : 'إضافة دفعة'),
+      content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'المبلغ')),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: const ['نقدي','بطاقة','تحويل بنكي','على الرصيد','شيك'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
+        const SizedBox(height: 10),
+        TextField(controller: referenceController, decoration: const InputDecoration(labelText: 'رقم مرجعي (اختياري)')),
+        const SizedBox(height: 10),
+        TextField(controller: notesController, decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)')),
+      ]))),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إضافة الدفعة'))],
+    )));
+    if (ok != true || !mounted) { amountController.dispose(); referenceController.dispose(); notesController.dispose(); return; }
+    final amount = double.tryParse(amountController.text.trim());
+    if (amount == null || amount <= 0) { _message('أدخل مبلغًا أكبر من صفر'); amountController.dispose(); referenceController.dispose(); notesController.dispose(); return; }
+    try {
+      final existing = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
+      final currentPaid = existing.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+      final total = ((headerRows.first['net'] ?? headerRows.first['total']) as num?)?.toDouble() ?? 0;
+      if (widget.screenKey != 'returns' && currentPaid + amount > total + 0.005) throw StateError('إجمالي الدفعات يتجاوز صافي المستند');
+      await DatabaseHelper.instance.insert('document_payments', {
+        'document_type': _paymentDocumentType, 'document_id': _selectedId,
+        'payment_date': DateTime.now().toIso8601String().substring(0, 10),
+        'method': method, 'amount': amount,
+        'reference': referenceController.text.trim(), 'notes': notesController.text.trim(),
+      });
+      await _syncPaidAmount();
+      if (mounted) { await context.read<AppProvider>().refresh(); _message(widget.screenKey == 'returns' ? 'تم تسجيل التسوية المالية للمرتجع' : 'تمت إضافة الدفعة وتحديث المدفوع'); setState(() {}); }
+    } catch (e) { _message('تعذرت إضافة الدفعة: $e'); }
+    amountController.dispose(); referenceController.dispose(); notesController.dispose();
+  }
+
+  Future<void> _deletePayment(Map<String,Object?> row) async {
+    if (_selectedId == null) return;
+    final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف الدفعة'), content: const Text('هل تريد حذف هذه الدفعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+    if (yes != true || !mounted) return;
+    try {
+      await DatabaseHelper.instance.delete('document_payments', where: 'id=? AND document_type=? AND document_id=?', whereArgs: [row['id'], _paymentDocumentType, _selectedId]);
+      await _syncPaidAmount();
+      if (mounted) { await context.read<AppProvider>().refresh(); _message('تم حذف الدفعة'); setState(() {}); }
+    } catch (e) { _message('تعذر حذف الدفعة: $e'); }
+  }
+
+  Future<void> _resetUserPassword() async {
+    if (widget.screenKey != 'users' || _selectedId == null) return;
+    final password = TextEditingController();
+    final confirm = TextEditingController();
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('إعادة تعيين كلمة المرور'),
+      content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: password, obscureText: true, decoration: const InputDecoration(labelText: 'كلمة المرور الجديدة')),
+        const SizedBox(height: 12),
+        TextField(controller: confirm, obscureText: true, decoration: const InputDecoration(labelText: 'تأكيد كلمة المرور')),
+      ])),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد'))],
+    ));
+    if (ok != true || !mounted) { password.dispose(); confirm.dispose(); return; }
+    if (password.text.trim().length < 6 || password.text != confirm.text) { _message('كلمتا المرور يجب أن تتطابقا وألا تقل كلمة المرور عن 6 أحرف'); password.dispose(); confirm.dispose(); return; }
+    try {
+      final hash = sha256.convert(utf8.encode(password.text)).toString();
+      await DatabaseHelper.instance.update('users', {'password_hash': hash}, where: 'id = ?', whereArgs: [_selectedId]);
+      _message('تمت إعادة تعيين كلمة المرور');
+    } catch (e) { _message('تعذرت إعادة تعيين كلمة المرور: $e'); }
+    password.dispose(); confirm.dispose();
+  }
+
+  Future<void> _printSelected() async {
+    if (_selectedId == null) { _message('حدد فاتورة من الجدول أولاً'); return; }
+    final rows = await DatabaseHelper.instance.query(config.table, where: 'id = ?', whereArgs: [_selectedId], limit: 1);
+    if (rows.isEmpty || !mounted) return;
+    final header = rows.first;
+    final lineTable = _lineTable;
+    final lines = lineTable == null ? <Map<String,Object?>>[] : await DatabaseHelper.instance.query(lineTable, where: '$_lineParent = ?', whereArgs: [_selectedId]);
+    if (!mounted) return;
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: Text('معاينة ${config.title} — ${header['invoice_no'] ?? header['return_no'] ?? _selectedId}'),
+      content: SizedBox(width: 620, child: SingleChildScrollView(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text('التاريخ: ${header['invoice_date'] ?? header['return_date'] ?? '—'}'),
+        Text('الحالة: ${header['status'] ?? 'مسودة'}'),
+        const Divider(),
+        if (lines.isEmpty) const Text('لا توجد بنود للعرض.') else ...lines.map((line) => Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('الصنف #${line['product_id'] ?? '—'} | الكمية: ${line['qty'] ?? '—'} | السعر: ${line['price'] ?? line['cost'] ?? '—'} | الإجمالي: ${line['line_total'] ?? '—'}'))),
+        const Divider(),
+        Text('الإجمالي: ${header['subtotal'] ?? header['total'] ?? 0}'),
+        Text('الخصم: ${header['discount'] ?? 0}   الضريبة: ${header['tax'] ?? 0}'),
+        Text('الصافي: ${header['net'] ?? header['total'] ?? 0}   المدفوع: ${header['paid'] ?? 0}'),
+      ]))),
+      actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))],
+    ));
+  }
+
+  Future<void> _delete(Map<String,Object?> row) async {
+    if (widget.screenKey == 'users') {
+      final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تعطيل المستخدم'), content: const Text('سيتم تعطيل المستخدم منطقيًا مع الاحتفاظ بسجله. هل تريد المتابعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تعطيل'))]));
+      if (yes != true || !mounted) return;
+      try { await DatabaseHelper.instance.update('users', {'is_active': 0}, where: 'id = ?', whereArgs: [row['id']]); if (_selectedId == row['id']) _clear(); await context.read<AppProvider>().refresh(); _message('تم تعطيل المستخدم دون حذف سجله'); } catch (e) { _message('تعذر تعطيل المستخدم: $e'); }
+      return;
+    }
+    if (_readOnly) { _message('لا يمكن حذف رصيد المخزون مباشرة؛ استخدم مستند حركة معتمدًا'); return; }
+    if (row['status'] == 'مرحل') { _message('لا يمكن حذف مستند مرحل؛ استخدم إجراء عكسي موثق'); return; }
+    final id = row['id']; if (id is! int) return;
+    
+    final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تأكيد الحذف'), content: const Text('هل تريد حذف السجل المحدد؟ قد تمنع العلاقات حذف سجلات مستخدمة.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+    if (yes != true || !mounted) return;
+    
+    try { 
+      await context.read<AppProvider>().remove(config.table, id); 
+      if (_selectedId == id) _clear(); 
+      _message('تم حذف السجل'); 
+    } catch (e) { 
+      _message('تعذر الحذف: $e'); 
+    }
+  }
+
+  void _select(Map<String,Object?> row) { 
+    setState(() => _selectedId = row['id'] as int?); 
+    for (final field in config.fields) { 
+      _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
+    } 
+  }
+  
+  void _clear() { 
+    for (final controller in _controllers.values) { controller.clear(); } 
+    setState(() { _selectedId = null; _applyDefaults(); }); 
+  }
+  
+  void _message(String text) { 
+    if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text))); 
+  }
+
+  Future<void> _export(List<Map<String,Object?>> rows) async {
+    if (rows.isEmpty) { _message('لا توجد بيانات لتصديرها'); return; }
+    try {
+      final headers = rows.first.keys.where((key) => !(config.table == 'users' && key == 'password_hash')).toList();
+      final csv = const ListToCsvConverter().convert([headers, ...rows.map((r) => headers.map((h) => r[h] ?? '').toList())]);
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(dir.path, 'StoreERP', 'exports')); await folder.create(recursive: true);
+      final file = File(p.join(folder.path, '${widget.screenKey}_${DateTime.now().millisecondsSinceEpoch}.csv'));
+      await file.writeAsString('\uFEFF$csv', flush: true);
+      _message('تم التصدير إلى: ${file.path}');
+    } catch (e) { _message('تعذر التصدير: $e'); }
+  }
+
+  Future<void> _backup() async {
+    setState(() => _busy = true);
+    try {
+      await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final source = await DatabaseHelper.instance.databasePath;
+      final dir = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(dir.path, 'StoreERP', 'backups')); await folder.create(recursive: true);
+      final path = p.join(folder.path, 'store_${DateTime.now().toIso8601String().replaceAll(':','-')}.db');
+      await File(source).copy(path);
+      
+      if (!mounted) return;
+      await context.read<AppProvider>().create('backup_history', {'file_path': path, 'status': 'نجاح'});
+      _message('تم إنشاء نسخة احتياطية: $path');
+    } catch (e) { 
+      _message('فشل إنشاء النسخة الاحتياطية: $e'); 
+    } finally { 
+      if (mounted) setState(() => _busy = false); 
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final controller = TextEditingController();
+    final path = await showDialog<String>(context:context, builder:(ctx)=>AlertDialog(
+      title:const Text('استعادة نسخة احتياطية'),
+      content:SizedBox(width:500, child:TextField(controller:controller, decoration:const InputDecoration(labelText:'المسار الكامل لملف .db', hintText:r'C:\Users\User\Documents\StoreERP\backups\store.db'))),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,controller.text.trim()),child:const Text('متابعة'))]
+    ));
+    
+    if (path == null || path.isEmpty || !mounted) { controller.dispose(); return; }
+    
+    final confirmed = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('تأكيد الاستعادة'),
+      content:const Text('سيتم استبدال قاعدة البيانات الحالية بالنسخة المحددة. أنشئ نسخة احتياطية حالية قبل المتابعة. هل تريد الاستمرار؟'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('استعادة واستبدال'))]
+    ));
+    
+    if (confirmed != true || !mounted) { controller.dispose(); return; }
+    setState(()=>_busy=true);
+    
+    try {
+      final source=File(path);
+      if (!await source.exists()) throw StateError('الملف غير موجود');
+      if (await source.length() < 100) throw StateError('ملف النسخة صغير أو غير صالح');
+      final raf=await source.open(); final header=await raf.read(16); await raf.close();
+      if (ascii.decode(header,allowInvalid:true) != 'SQLite format 3\u0000') throw StateError('الملف المحدد ليس قاعدة SQLite صالحة');
+      final target=await DatabaseHelper.instance.databasePath;
+      await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final docs=await getApplicationDocumentsDirectory();
+      final safetyDir=Directory(p.join(docs.path,'StoreERP','backups'));
+      await safetyDir.create(recursive:true);
+      await File(target).copy(p.join(safetyDir.path,'pre_restore_${DateTime.now().millisecondsSinceEpoch}.db'));
+      await DatabaseHelper.instance.close();
+      for (final suffix in ['-wal','-shm']) { final sidecar=File('$target$suffix'); if(await sidecar.exists()) await sidecar.delete(); }
+      await source.copy(target);
+      await DatabaseHelper.instance.database;
+      
+      if (!mounted) return; 
+      await context.read<AppProvider>().refresh();
+      _message('تمت استعادة النسخة بنجاح. يوصى بتسجيل الخروج ثم الدخول مجددًا.');
+    } catch(e) { 
+      _message('تعذرت الاستعادة: $e'); 
+    } finally {
+      controller.dispose(); 
+      if(mounted) setState(()=>_busy=false);
+    }
+  }
+
+  String _displayValue(String field, Object? value) {
+    if (value == null) return '—';
+    if (field == 'is_active') {
+      return (value as num?)?.toInt() == 1 ? 'نشط' : 'غير نشط';
+    }
+    final reference = _referenceFields[field];
+    final id = (value as num?)?.toInt() ?? int.tryParse(value.toString());
+    if (reference != null && id != null) {
+      final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+      for (final option in options) {
+        if ((option['id'] as num?)?.toInt() == id) {
+          return '${option[reference.$2] ?? value} (#$id)';
+        }
+      }
+    }
+    return value.toString();
+  }
+
+  Future<List<Map<String, Object?>>> _loadRows() async {
+    final rows = await context.read<AppProvider>().load(config.table);
+    final expectedType = switch (widget.screenKey) {
+      'counts' => 'فعلي',
+      'dailycount' => 'يومي',
+      'monthlycount' => 'شهري',
+      'yearlycount' => 'سنوي',
+      _ => null,
+    };
+    if (expectedType == null) return rows;
+    final documents = await DatabaseHelper.instance.query('inventory_documents');
+    final matchingIds = documents
+        .where((row) => (row['inventory_type'] ?? '').toString().contains(expectedType))
+        .map((row) => row['id'])
+        .toSet();
+    return rows.where((row) => matchingIds.contains(row['document_id'])).toList();
+  }
+
+  @override 
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String,Object?>>>(
+      future: _loadRows(),
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? <Map<String,Object?>>[];
+        final rows = all.where((row) => _filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(_filter.toLowerCase()))).toList();
+        
+        return ListView(padding: const EdgeInsets.all(18), children: [
+          SectionCard(
+            title: config.title, 
+            trailing: Wrap(spacing: 8, children: [
+              if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
+              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
+              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
+              if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
+              if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
+              if (widget.screenKey == 'users' && _selectedId != null) ActionButton('إعادة تعيين كلمة المرور', icon: Icons.password, onPressed: _resetUserPassword),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('طباعة / معاينة', icon: Icons.print_outlined, onPressed: _printSelected),
+              if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
+              if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
+            ]), 
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, 
+              children: [
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
+                if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
+                if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
+                if (!_readOnly) Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: config.fields
+                      .map((field) => _fieldInput(
+                            field,
+                            MediaQuery.sizeOf(context).width > 1050
+                                ? 240
+                                : MediaQuery.sizeOf(context).width * .72,
+                          ))
+                      .toList(),
+                ),
+                if (_selectedId != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text('وضع التعديل — السجل رقم $_selectedId', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
+              ]
+            )
+          ),
+          
+          if (_selectedId != null && _lineTable != null) ...[
+            const SizedBox(height: 12),
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),
+              builder: (context, lineSnapshot) {
+                final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
+                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
+                return SectionCard(
+                  title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
+                  trailing: TextButton.icon(
+                    onPressed: _addLine,
+                    icon: const Icon(Icons.add),
+                    label: const Text('إضافة بند'),
+                  ),
+                  child: lineSnapshot.hasError
+                      ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')
+                      : lineRows.isEmpty
+                          ? const Text('لا توجد بنود لهذا المستند بعد')
+                          : SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: [
+                                  ...keys.map((k) => DataColumn(label: Text(fieldLabel(k)))),
+                                  const DataColumn(label: Text('إجراء')),
+                                ],
+                                rows: lineRows.map((r) {
+                                  return DataRow(
+                                    cells: [
+                                      ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
+                                      DataCell(
+                                        IconButton(
+                                          tooltip: 'حذف البند',
+                                          onPressed: () => _deleteLine(r),
+                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                );
+              }
+            ),
+          ],
+          
+          if (_selectedId != null && ['sales','purchases','returns'].contains(widget.screenKey)) ...[
+            const SizedBox(height: 12),
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId], orderBy: 'id DESC'),
+              builder: (context, paymentSnapshot) {
+                final paymentRows = paymentSnapshot.data ?? <Map<String,Object?>>[];
+                final totalPaid = paymentRows.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+                final headerRows = all.where((row) => row['id'] == _selectedId).toList();
+                final header = headerRows.isEmpty ? <String,Object?>{} : headerRows.first;
+                final total = ((header['net'] ?? header['total']) as num?)?.toDouble() ?? 0;
+                return SectionCard(
+                  title: widget.screenKey == 'returns' ? 'تسوية المرتجع' : 'دفعات المستند',
+                  trailing: Text('إجمالي الدفعات: ${totalPaid.toStringAsFixed(2)}'),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (widget.screenKey != 'returns') Text('الصافي: ${total.toStringAsFixed(2)}   |   المتبقي: ${(total-totalPaid).clamp(0,double.infinity).toStringAsFixed(2)}'),
+                    if (paymentSnapshot.hasError) Text('تعذر تحميل الدفعات: ${paymentSnapshot.error}')
+                    else if (paymentRows.isEmpty) const Padding(padding: EdgeInsets.all(12), child: Text('لا توجد دفعات مسجلة لهذا المستند.'))
+                    else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
+                      columns: const [DataColumn(label: Text('التاريخ')), DataColumn(label: Text('الطريقة')), DataColumn(label: Text('المبلغ')), DataColumn(label: Text('المرجع')), DataColumn(label: Text('ملاحظات')), DataColumn(label: Text('إجراء'))],
+                      rows: paymentRows.map((row) => DataRow(cells: [
+                        DataCell(Text((row['payment_date'] ?? '—').toString())),
+                        DataCell(Text((row['method'] ?? 'نقدي').toString())),
+                        DataCell(Text(((row['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                        DataCell(Text((row['reference'] ?? '—').toString())),
+                        DataCell(Text((row['notes'] ?? '—').toString())),
+                        DataCell(IconButton(tooltip: 'حذف الدفعة', onPressed: () => _deletePayment(row), icon: const Icon(Icons.delete_outline, color: Colors.red))),
+                      ])).toList(),
+                    )),
+                    Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: _addPayment, icon: const Icon(Icons.add_card), label: const Text('إضافة دفعة / تسوية'))),
+                  ]),
+                );
+              },
+            ),
+          ],
+          
+          const SizedBox(height: 16),
+          
+          // تم ترتيب هذا الجزء بالكامل لحل مشكلة الأقواس المتداخلة (])))),)
+          SectionCard(
+            title: 'السجلات والبحث (${rows.length})', 
+            trailing: Wrap(
+              spacing: 8, 
+              children: [
+                ActionButton('تصدير CSV', icon: Icons.file_download_outlined, onPressed: () => _export(rows)), 
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: () => setState(() {}))
+              ]
+            ), 
+            child: Column(
+              children: [
+                TextField(
+                  controller: _search, 
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ابحث في جميع حقول السجلات...'), 
+                  onChanged: (v) => setState(() => _filter = v.trim())
+                ),
+                const SizedBox(height: 12),
+                
+                if (_busy || snapshot.connectionState == ConnectionState.waiting) 
+                  const LinearProgressIndicator(),
+                  
+                if (snapshot.hasError) 
+                  Padding(padding: const EdgeInsets.all(16), child: Text('تعذر تحميل البيانات: ${snapshot.error}'))
+                else if (rows.isEmpty) 
+                  const Padding(padding: EdgeInsets.all(24), child: Text('لا توجد سجلات مطابقة'))
+                else 
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal, 
+                    child: DataTable(
+                      columns: [
+                        ...config.columns.map((field) => DataColumn(label: Text(fieldLabel(field)))), 
+                        const DataColumn(label: Text('إجراءات'))
+                      ], 
+                      rows: rows.map((row) => DataRow(
+                        selected: row['id'] == _selectedId, 
+                        onSelectChanged: (_) => _select(row), 
+                        cells: [
+                          ...config.columns.map((field) => DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 220), 
+                              child: Text(_displayValue(field, row[field]), overflow: TextOverflow.ellipsis)
+                            )
+                          )), 
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min, 
+                              children: [
+                                IconButton(tooltip: _readOnly ? 'عرض' : 'تعديل', onPressed: () => _select(row), icon: Icon(_readOnly ? Icons.visibility_outlined : Icons.edit_outlined, color: Colors.blue)), 
+                                if (!_readOnly) 
+                                  IconButton(tooltip: 'حذف', onPressed: () => _delete(row), icon: const Icon(Icons.delete_outline, color: Colors.red))
+                              ]
+                            )
+                          )
+                        ]
+                      )).toList()
+                    )
+                  ) // نهاية SingleChildScrollView
+              ]
+            ) // نهاية Column
+          ), // نهاية SectionCard
+        ]); // نهاية ListView
+      }, // نهاية builder
+    ); // نهاية FutureBuilder
+  }
+  
+  IconData _icon(String field) { if (field.contains('name')) return Icons.badge_outlined; if (field.contains('price') || field == 'net' || field == 'balance' || field == 'amount') return Icons.payments_outlined; if (field.contains('date')) return Icons.calendar_month_outlined; if (field.contains('phone') || field == 'mobile') return Icons.phone_outlined; if (field.contains('qty')) return Icons.inventory_2_outlined; return Icons.edit_note; }
+}
+).hasMatch(expiry)) throw StateError('تاريخ الانتهاء يجب أن يكون بصيغة YYYY-MM-DD');
+      final table = isSale ? 'sales_lines' : isPurchase ? 'purchases_lines' : isTransfer ? 'warehouse_transfer_lines' : isReturn ? 'sales_return_lines' : isCountDoc ? 'inventory_items' : 'damage_lines';
+      final parentField = isSale ? 'sales_id' : isPurchase ? 'purchase_id' : isTransfer ? 'transfer_id' : isReturn ? 'return_id' : 'document_id';
+      final values = <String,Object?>{parentField:_selectedId,'product_id':productId,'qty':qty};
+      
+      if (isCountDoc) {
+        final docs = await DatabaseHelper.instance.query('inventory_documents', where:'id=?', whereArgs:[_selectedId], limit:1);
+        if (docs.isEmpty) throw StateError('مستند الجرد غير موجود');
+        final warehouseId=(docs.first['warehouse_id'] as num?)?.toInt();
+        if (warehouseId == null) throw StateError('حدد المخزن في رأس مستند الجرد أولاً');
+        final stock=await DatabaseHelper.instance.query('inventory',where:'product_id=? AND warehouse_id=?',whereArgs:[productId,warehouseId],limit:1);
+        final bookQty=stock.isEmpty?0.0:((stock.first['qty'] as num?)?.toDouble()??0);
+        final already=await DatabaseHelper.instance.query('inventory_items',where:'document_id=? AND product_id=?',whereArgs:[_selectedId,productId],limit:1);
+        if(already.isNotEmpty) throw StateError('الصنف موجود مسبقًا في مستند الجرد');
+        values.remove('qty'); values.addAll({'book_qty':bookQty,'count_qty':qty,'count_qty2':qty,'difference':qty-bookQty,'difference_cost':0});
+      }
+      final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'قطعة').toString()).firstWhere((_)=>true, orElse:()=> 'قطعة');
+      if (isSale) { values.addAll({'unit':unitName,'factor':unitFactor,'price':price,'discount':lineDiscount,'tax':lineTax,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
+      if (isPurchase) { values.addAll({'unit':unitName,'factor':unitFactor,'cost':price,'discount':lineDiscount,'tax':lineTax,'batch_no':batchController.text.trim(),'expiry_date':expiry.isEmpty?null:expiry,'line_total':(qty*price-lineDiscount+lineTax).clamp(0,double.infinity)}); }
       if (isReturn) values.addAll({'price':price,'condition':returnCondition});
       if (isTransfer) values.addAll({'factor':1,'unit':'قطعة'});
       if (isDamage) { final prod=products.firstWhere((x)=>(x['id'] as num).toInt()==productId); values['estimated_cost']=((prod['cost_price'] as num?)?.toDouble() ?? 0); }
