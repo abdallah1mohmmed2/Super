@@ -403,6 +403,7 @@ class _DataScreenState extends State<DataScreen> {
       if (isPurchase && production.isNotEmpty && !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(production)) throw StateError('تاريخ الإنتاج يجب أن يكون بصيغة YYYY-MM-DD');
       final table = isSale ? 'sales_lines' : isPurchase ? 'purchases_lines' : isTransfer ? 'warehouse_transfer_lines' : isReturn ? 'sales_return_lines' : isCountDoc ? 'inventory_items' : 'damage_lines';
       final parentField = isSale ? 'sales_id' : isPurchase ? 'purchase_id' : isTransfer ? 'transfer_id' : isReturn ? 'return_id' : 'document_id';
+      if ((isSale || isPurchase || isReturn) && unitFactor <= 0) throw StateError('معامل تحويل الوحدة يجب أن يكون أكبر من صفر');
       final values = <String,Object?>{parentField:_selectedId,'product_id':productId,'qty':qty};
       
       if (isCountDoc) {
@@ -556,6 +557,15 @@ class _DataScreenState extends State<DataScreen> {
     final salesId = (returns.first['sales_id'] as num?)?.toInt();
     if (salesId == null) { _message('اختر الفاتورة الأصلية من حقل «معرف فاتورة البيع» أولاً'); return; }
     final saleHeaders = await DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [salesId], limit: 1);
+    if (saleHeaders.isEmpty || saleHeaders.first['status'] != 'مرحل') { _message('يجب اختيار فاتورة بيع مرحلة'); return; }
+    final originalHeader = saleHeaders.first;
+    final originalCustomerId = (originalHeader['customer_id'] as num?)?.toInt();
+    final originalWarehouseId = (originalHeader['warehouse_id'] as num?)?.toInt();
+    if (originalWarehouseId == null) { _message('الفاتورة الأصلية لا تحتوي على مخزن'); return; }
+    await DatabaseHelper.instance.update('sales_returns', {'customer_id': originalCustomerId, 'warehouse_id': originalWarehouseId}, where: 'id=?', whereArgs: [_selectedId]);
+    if (_controllers.containsKey('customer_id')) _controllers['customer_id']!.text = originalCustomerId?.toString() ?? '';
+    if (_controllers.containsKey('warehouse_id')) _controllers['warehouse_id']!.text = originalWarehouseId.toString();
+    await context.read<AppProvider>().refresh();
     final soldLines = await DatabaseHelper.instance.query('sales_lines', where: 'sales_id=?', whereArgs: [salesId], orderBy: 'id');
     if (soldLines.isEmpty) { _message('الفاتورة الأصلية لا تحتوي على أصناف'); return; }
     final allReturns = await DatabaseHelper.instance.query('sales_returns', where: 'sales_id=? AND status=?', whereArgs: [salesId, 'مرحل']);
