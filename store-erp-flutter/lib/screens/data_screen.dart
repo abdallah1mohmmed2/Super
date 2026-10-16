@@ -465,15 +465,24 @@ class _DataScreenState extends State<DataScreen> {
       final header = headerRows.first;
       
       if (widget.screenKey == 'sales') {
+        if (header['warehouse_id'] == null || header['cash_box_id'] == null) {
+          throw StateError('حدد المخزن والصندوق في رأس فاتورة المبيعات قبل الترحيل');
+        }
         final lines = await db.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
         await db.postSale(saleId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, customerId:(header['customer_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1)}).toList());
       } else if (widget.screenKey == 'returns') {
         final lines = await db.query('sales_return_lines', where:'return_id=?', whereArgs:[_selectedId]);
         await db.postSalesReturn(returnId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'price':(r['price'] as num).toDouble(),'good':r['condition']=='سليم' ? 1.0 : 0.0}).toList());
       } else if (widget.screenKey == 'purchases') {
+        if (header['warehouse_id'] == null || header['cash_box_id'] == null || header['supplier_id'] == null) {
+          throw StateError('حدد المخزن والصندوق والمورد في رأس فاتورة المشتريات قبل الترحيل');
+        }
         final lines = await db.query('purchases_lines', where:'purchase_id=?', whereArgs:[_selectedId]);
         await db.postPurchase(purchaseId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, supplierId:(header['supplier_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1),'cost':(r['cost'] as num).toDouble()}).toList());
       } else if (widget.screenKey == 'transfers') {
+        if (header['from_warehouse_id'] == null || header['to_warehouse_id'] == null) {
+          throw StateError('حدد المخزن المصدر والمخزن المستلم قبل الترحيل');
+        }
         final lines = await db.query('warehouse_transfer_lines', where:'transfer_id=?', whereArgs:[_selectedId]);
         await db.transferWarehouse(transferId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1)}).toList());
       } else if (widget.screenKey == 'cashtransfers') {
