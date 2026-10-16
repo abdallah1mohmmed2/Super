@@ -150,6 +150,92 @@ class DatabaseHelper {
   Future<int> delete(String table, {required String where, required List<Object?> whereArgs}) async => (await database).delete(table, where: where, whereArgs: whereArgs);
 
 
+  Future<void> _consumeTrackedBatches(
+    Transaction txn, {
+    required int productId,
+    required int warehouseId,
+    required double qty,
+  }) async {
+    var remaining = qty;
+    final batches = await txn.query(
+      'product_batches',
+      where: 'product_id=? AND warehouse_id=? AND qty>0',
+      whereArgs: [productId, warehouseId],
+      orderBy: "CASE WHEN expiry_date IS NULL OR expiry_date='' THEN 1 ELSE 0 END, expiry_date, id",
+    );
+    for (final batch in batches) {
+      if (remaining <= 0.000001) break;
+      final available = (batch['qty'] as num?)?.toDouble() ?? 0;
+      if (available <= 0) continue;
+      final used = available < remaining ? available : remaining;
+      await txn.update(
+        'product_batches',
+        {'qty': available - used},
+        where: 'id=?',
+        whereArgs: [batch['id']],
+      );
+      remaining -= used;
+    }
+    // Any remainder represents untracked stock; inventory quantity remains authoritative.
+  }
+
+  Future<void> _moveTrackedBatches(
+    Transaction txn, {
+    required int productId,
+    required int fromWarehouseId,
+    required int toWarehouseId,
+    required double qty,
+  }) async {
+    var remaining = qty;
+    final batches = await txn.query(
+      'product_batches',
+      where: 'product_id=? AND warehouse_id=? AND qty>0',
+      whereArgs: [productId, fromWarehouseId],
+      orderBy: "CASE WHEN expiry_date IS NULL OR expiry_date='' THEN 1 ELSE 0 END, expiry_date, id",
+    );
+    for (final batch in batches) {
+      if (remaining <= 0.000001) break;
+      final available = (batch['qty'] as num?)?.toDouble() ?? 0;
+      if (available <= 0) continue;
+      final moved = available < remaining ? available : remaining;
+      await txn.update(
+        'product_batches',
+        {'qty': available - moved},
+        where: 'id=?',
+        whereArgs: [batch['id']],
+      );
+      final batchNo = (batch['batch_no'] ?? '').toString();
+      final productionDate = (batch['production_date'] ?? '').toString();
+      final expiryDate = (batch['expiry_date'] ?? '').toString();
+      final destination = await txn.query(
+        'product_batches',
+        where: "product_id=? AND warehouse_id=? AND COALESCE(batch_no,'')=? AND COALESCE(production_date,'')=? AND COALESCE(expiry_date,'')=?",
+        whereArgs: [productId, toWarehouseId, batchNo, productionDate, expiryDate],
+        limit: 1,
+      );
+      if (destination.isEmpty) {
+        await txn.insert('product_batches', {
+          'product_id': productId,
+          'warehouse_id': toWarehouseId,
+          'batch_no': batchNo.isEmpty ? null : batchNo,
+          'production_date': productionDate.isEmpty ? null : productionDate,
+          'expiry_date': expiryDate.isEmpty ? null : expiryDate,
+          'qty': moved,
+        });
+      } else {
+        final destinationQty = (destination.first['qty'] as num?)?.toDouble() ?? 0;
+        await txn.update(
+          'product_batches',
+          {'qty': destinationQty + moved},
+          where: 'id=?',
+          whereArgs: [destination.first['id']],
+        );
+      }
+      remaining -= moved;
+    }
+    // Any remainder represents untracked stock; inventory quantity remains authoritative.
+  }
+
   Future<void> postSale({required int saleId, required int warehouseId, required int cashBoxId, required List<Map<String, num>> lines, required double net, required double paid, int? customerId}) async {
     final db = await database;
     await db.transaction((txn) async {
@@ -177,6 +263,7 @@ class DatabaseHelper {
         } else {
           await txn.update('inventory', {'qty':stock-qty}, where:'id=?', whereArgs:[stockRows.first['id']]);
         }
+        await _consumeTrackedBatches(txn, productId: productId, warehouseId: warehouseId, qty: qty);
         costTotal += qty * ((product['cost_price'] as num?)?.toDouble() ?? 0);
       }
       if(customerId!=null && net>paid) {
@@ -389,6 +476,7 @@ class DatabaseHelper {
         final sourceQty = source.isEmpty ? 0.0 : (source.first['qty'] as num).toDouble();
         if (sourceQty < qty) throw StateError('الرصيد غير كافٍ للصنف $productId');
         await txn.update('inventory', {'qty':sourceQty-qty}, where:'id=?', whereArgs:[source.first['id']]);
+        await _moveTrackedBatches(txn, productId: productId, fromWarehouseId: fromId, toWarehouseId: toId, qty: qty);
         final dest = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,toId], limit:1);
         if (dest.isEmpty) { await txn.insert('inventory', {'product_id':productId,'warehouse_id':toId,'qty':qty}); }
         else { await txn.update('inventory', {'qty':(dest.first['qty'] as num).toDouble()+qty}, where:'id=?', whereArgs:[dest.first['id']]); }
@@ -439,6 +527,7 @@ class DatabaseHelper {
         final stocks = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
         if (stocks.isEmpty || (stocks.first['qty'] as num).toDouble() < qty) throw StateError('رصيد المخزون غير كافٍ للصنف $productId');
         await txn.update('inventory', {'qty':(stocks.first['qty'] as num).toDouble()-qty}, where:'id=?', whereArgs:[stocks.first['id']]);
+        await _consumeTrackedBatches(txn, productId: productId, warehouseId: warehouseId, qty: qty);
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
         final cost = (products.first['cost_price'] as num?)?.toDouble() ?? 0;
         totalCost += qty * cost;
