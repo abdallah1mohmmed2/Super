@@ -17,7 +17,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 10,
+        version: 11,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -30,7 +30,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 10, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 11, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -40,7 +40,7 @@ class DatabaseHelper {
       await db.execute('''CREATE TABLE IF NOT EXISTS accounting_entry_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, entry_id INTEGER NOT NULL REFERENCES accounting_entries(id) ON DELETE CASCADE, account_code TEXT NOT NULL, account_name TEXT NOT NULL, debit REAL NOT NULL DEFAULT 0, credit REAL NOT NULL DEFAULT 0, CHECK(debit >= 0 AND credit >= 0), CHECK(NOT (debit > 0 AND credit > 0)))''');
       await db.execute('''CREATE TABLE IF NOT EXISTS app_accounts(account_code TEXT PRIMARY KEY, account_name TEXT NOT NULL, account_type TEXT NOT NULL, is_active INTEGER NOT NULL DEFAULT 1)''');
       for (final account in [
-        ['1000','الصندوق','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
+        ['1000','الصندوق','أصول'], ['1010','البنك / البطاقة','أصول'], ['1020','شيكات تحت التحصيل','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
         ['2000','ذمم الموردين','التزامات'], ['3000','رأس المال','حقوق ملكية'], ['4000','إيرادات المبيعات','إيرادات'], ['4100','مردودات المبيعات','إيرادات'],
         ['5000','تكلفة البضاعة المباعة','مصروفات'], ['5100','مصروفات التالف','مصروفات']
       ]) {
@@ -121,6 +121,10 @@ class DatabaseHelper {
       if (!salesLineColumns.any((column) => column['name'] == 'notes')) {
         await db.execute('ALTER TABLE sales_lines ADD COLUMN notes TEXT');
       }
+    }
+    if (oldVersion < 11) {
+      await db.insert('app_accounts', {'account_code':'1010','account_name':'البنك / البطاقة','account_type':'أصول','is_active':1}, conflictAlgorithm: ConflictAlgorithm.ignore);
+      await db.insert('app_accounts', {'account_code':'1020','account_name':'شيكات تحت التحصيل','account_type':'أصول','is_active':1}, conflictAlgorithm: ConflictAlgorithm.ignore);
     }
   }
 
@@ -344,19 +348,42 @@ class DatabaseHelper {
         final balance=(customer['balance'] as num?)?.toDouble() ?? 0;
         if(limit>0 && balance+(net-paid)>limit) throw StateError('تجاوز حد ائتمان العميل');
       }
+      final paymentRows = await txn.query('document_payments', where:'document_type=? AND document_id=?', whereArgs:['sales', saleId]);
+      double cashPaid = 0, bankPaid = 0, chequePaid = 0;
+      if (paymentRows.isEmpty) {
+        cashPaid = paid; // Legacy invoices without payment detail are treated as cash.
+      } else {
+        for (final payment in paymentRows) {
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0;
+          switch ((payment['method'] ?? 'نقدي').toString()) {
+            case 'نقدي': cashPaid += amount; break;
+            case 'شيك': chequePaid += amount; break;
+            case 'بطاقة':
+            case 'تحويل بنكي': bankPaid += amount; break;
+            default: throw StateError('طريقة دفع غير مدعومة في فاتورة المبيعات: ${payment['method']}');
+          }
+        }
+        final paymentTotal = cashPaid + bankPaid + chequePaid;
+        if ((paymentTotal - paid).abs() > 0.005) throw StateError('إجمالي الدفعات لا يطابق المبلغ المدفوع في الفاتورة');
+      }
       await txn.update('sales_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'customer_id':customerId}, where:'id=?', whereArgs:[saleId]);
-      if (paid > 0) {
-        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':paid,'reference':'SALE-$saleId'});
-        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[paid,cashBoxId]);
+      if (cashPaid > 0) {
+        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':cashPaid,'reference':'SALE-$saleId'});
+        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[cashPaid,cashBoxId]);
       }
       if (customerId != null && net > paid) await txn.rawUpdate('UPDATE customers SET balance = balance + ? WHERE id=?',[net-paid,customerId]);
-      final entryId = await _createJournal(txn, 'SALE', saleId, sale['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مبيعات ${sale['invoice_no'] ?? saleId}', [
-        ['1000', 'الصندوق', paid, 0],
-        ['1200', 'ذمم العملاء', net-paid, 0],
+      final journalLines = <List<Object>>[];
+      if (cashPaid > 0) journalLines.add(['1000','الصندوق',cashPaid,0]);
+      if (bankPaid > 0) journalLines.add(['1010','البنك / البطاقة',bankPaid,0]);
+      if (chequePaid > 0) journalLines.add(['1020','شيكات تحت التحصيل',chequePaid,0]);
+      if (net > paid) journalLines.add(['1200','ذمم العملاء',net-paid,0]);
+      journalLines.addAll([
+        ['4000', 'إيرادات المبيعات', 0, net],
         ['4000', 'إيرادات المبيعات', 0, net],
         ['5000', 'تكلفة البضاعة المباعة', costTotal, 0],
         ['1100', 'المخزون', 0, costTotal],
       ]);
+      final entryId = await _createJournal(txn, 'SALE', saleId, sale['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مبيعات ${sale['invoice_no'] ?? saleId}', journalLines);
       await txn.insert('audit_log', {'action':'ترحيل فاتورة مبيعات','entity':'sales_header','entity_id':saleId,'details':'قيد محاسبي $entryId'});
     });
   }
