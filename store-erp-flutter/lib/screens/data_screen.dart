@@ -30,6 +30,7 @@ class _DataScreenState extends State<DataScreen> {
   static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
+  bool _referencesLoading = true;
 
   static const _choiceFields = <String, List<String>>{
     'payment_method': ['نقدي', 'آجل', 'جزئي', 'تحويل بنكي'],
@@ -72,11 +73,16 @@ class _DataScreenState extends State<DataScreen> {
         );
       }
       if (!mounted) return;
-      setState(() => _referenceOptions
-        ..clear()
-        ..addAll(loaded));
+      setState(() {
+        _referenceOptions
+          ..clear()
+          ..addAll(loaded);
+        _referencesLoading = false;
+      });
     } catch (_) {
-      // Keep the form usable if a reference table is unavailable.
+      if (!mounted) return;
+      setState(() => _referencesLoading = false);
+      // Empty reference lists remain disabled instead of accepting arbitrary IDs.
     }
   }
 
@@ -107,7 +113,7 @@ class _DataScreenState extends State<DataScreen> {
     }
     final reference = _referenceFields[field];
     final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
-    if (reference != null && options.isNotEmpty) {
+    if (reference != null) {
       final selected = int.tryParse(_controllers[field]!.text);
       final selectedValue = options.any((row) => (row['id'] as num?)?.toInt() == selected)
           ? selected
@@ -120,8 +126,11 @@ class _DataScreenState extends State<DataScreen> {
           decoration: InputDecoration(
             labelText: fieldLabel(field),
             prefixIcon: Icon(_icon(field)),
+            helperText: options.isEmpty
+                ? (_referencesLoading ? 'جارٍ تحميل الخيارات...' : 'لا توجد سجلات مرجعية؛ أضفها من شاشتها أولاً')
+                : null,
           ),
-          hint: const Text('اختر من القائمة'),
+          hint: Text(options.isEmpty ? 'لا توجد خيارات' : 'اختر من القائمة'),
           items: options.map((row) {
             final id = (row['id'] as num).toInt();
             final label = (row[reference.$2] ?? 'بدون اسم').toString();
@@ -130,10 +139,12 @@ class _DataScreenState extends State<DataScreen> {
               child: Text('$label  (#$id)', overflow: TextOverflow.ellipsis),
             );
           }).toList(),
-          onChanged: (value) {
-            _controllers[field]!.text = value?.toString() ?? '';
-            setState(() {});
-          },
+          onChanged: options.isEmpty
+              ? null
+              : (value) {
+                  _controllers[field]!.text = value?.toString() ?? '';
+                  setState(() {});
+                },
         ),
       );
     }
@@ -308,6 +319,7 @@ class _DataScreenState extends State<DataScreen> {
       
       if (!mounted) return; 
       await provider.refresh();
+      await _loadReferenceOptions();
       _message('تم الحفظ بنجاح — رقم السجل $_selectedId');
       setState(() {});
     } catch (e) { 
@@ -645,7 +657,7 @@ class _DataScreenState extends State<DataScreen> {
       content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'المبلغ')),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: const ['نقدي','بطاقة','تحويل بنكي','على الرصيد','شيك'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
+        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: const ['نقدي','بطاقة','تحويل بنكي','شيك'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
         const SizedBox(height: 10),
         TextField(controller: referenceController, decoration: const InputDecoration(labelText: 'رقم مرجعي (اختياري)')),
         const SizedBox(height: 10),
