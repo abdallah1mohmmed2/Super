@@ -203,9 +203,10 @@ class _DataScreenState extends State<DataScreen> {
     if (widget.screenKey == 'countdocs' && _controllers.containsKey('inventory_type') && _controllers['inventory_type']!.text.isEmpty) {
       _controllers['inventory_type']!.text = 'فعلي';
     }
-    if (widget.screenKey == 'cashboxes' && _controllers.containsKey('is_active') && _controllers['is_active']!.text.isEmpty) {
+    if (['cashboxes','suppliers','users'].contains(widget.screenKey) && _controllers.containsKey('is_active') && _controllers['is_active']!.text.isEmpty) {
       _controllers['is_active']!.text = '1';
     }
+    if (widget.screenKey == 'suppliers' && _controllers.containsKey('balance') && _controllers['balance']!.text.isEmpty) { _controllers['balance']!.text = '0'; }
   }
 
   String? _validateRequired(Map<String, Object?> data) {
@@ -514,6 +515,70 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  String get _paymentDocumentType => widget.screenKey == 'sales' ? 'sales' : widget.screenKey == 'purchases' ? 'purchases' : 'returns';
+
+  Future<void> _syncPaidAmount() async {
+    if (_selectedId == null || widget.screenKey == 'returns') return;
+    final payments = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
+    final paid = payments.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+    final table = widget.screenKey == 'sales' ? 'sales_header' : 'purchases_header';
+    await DatabaseHelper.instance.update(table, {'paid': paid}, where: 'id=?', whereArgs: [_selectedId]);
+  }
+
+  Future<void> _addPayment() async {
+    if (_selectedId == null || !['sales','purchases','returns'].contains(widget.screenKey)) { _message('احفظ المستند وحدده أولاً'); return; }
+    final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
+    final headerRows = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (headerRows.isEmpty) { _message('المستند غير موجود'); return; }
+    if (headerRows.first['status'] == 'مرحل') { _message('لا يمكن تعديل دفعات مستند مرحل'); return; }
+    final amountController = TextEditingController();
+    final referenceController = TextEditingController();
+    final notesController = TextEditingController();
+    String method = 'نقدي';
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
+      title: Text(widget.screenKey == 'returns' ? 'إضافة تسوية / دفعة مرتجع' : 'إضافة دفعة'),
+      content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'المبلغ')),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: const ['نقدي','بطاقة','تحويل بنكي','على الرصيد','شيك'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
+        const SizedBox(height: 10),
+        TextField(controller: referenceController, decoration: const InputDecoration(labelText: 'رقم مرجعي (اختياري)')),
+        const SizedBox(height: 10),
+        TextField(controller: notesController, decoration: const InputDecoration(labelText: 'ملاحظات (اختياري)')),
+      ]))),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('إضافة الدفعة'))],
+    )));
+    if (ok != true || !mounted) { amountController.dispose(); referenceController.dispose(); notesController.dispose(); return; }
+    final amount = double.tryParse(amountController.text.trim());
+    if (amount == null || amount <= 0) { _message('أدخل مبلغًا أكبر من صفر'); amountController.dispose(); referenceController.dispose(); notesController.dispose(); return; }
+    try {
+      final existing = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
+      final currentPaid = existing.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+      final total = ((headerRows.first['net'] ?? headerRows.first['total']) as num?)?.toDouble() ?? 0;
+      if (widget.screenKey != 'returns' && currentPaid + amount > total + 0.005) throw StateError('إجمالي الدفعات يتجاوز صافي المستند');
+      await DatabaseHelper.instance.insert('document_payments', {
+        'document_type': _paymentDocumentType, 'document_id': _selectedId,
+        'payment_date': DateTime.now().toIso8601String().substring(0, 10),
+        'method': method, 'amount': amount,
+        'reference': referenceController.text.trim(), 'notes': notesController.text.trim(),
+      });
+      await _syncPaidAmount();
+      if (mounted) { await context.read<AppProvider>().refresh(); _message(widget.screenKey == 'returns' ? 'تم تسجيل التسوية المالية للمرتجع' : 'تمت إضافة الدفعة وتحديث المدفوع'); setState(() {}); }
+    } catch (e) { _message('تعذرت إضافة الدفعة: $e'); }
+    amountController.dispose(); referenceController.dispose(); notesController.dispose();
+  }
+
+  Future<void> _deletePayment(Map<String,Object?> row) async {
+    if (_selectedId == null) return;
+    final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف الدفعة'), content: const Text('هل تريد حذف هذه الدفعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+    if (yes != true || !mounted) return;
+    try {
+      await DatabaseHelper.instance.delete('document_payments', where: 'id=? AND document_type=? AND document_id=?', whereArgs: [row['id'], _paymentDocumentType, _selectedId]);
+      await _syncPaidAmount();
+      if (mounted) { await context.read<AppProvider>().refresh(); _message('تم حذف الدفعة'); setState(() {}); }
+    } catch (e) { _message('تعذر حذف الدفعة: $e'); }
+  }
+
   Future<void> _resetUserPassword() async {
     if (widget.screenKey != 'users' || _selectedId == null) return;
     final password = TextEditingController();
@@ -737,6 +802,7 @@ class _DataScreenState extends State<DataScreen> {
               if (widget.screenKey == 'users' && _selectedId != null) ActionButton('إعادة تعيين كلمة المرور', icon: Icons.password, onPressed: _resetUserPassword),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('طباعة / معاينة', icon: Icons.print_outlined, onPressed: _printSelected),
+              if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
               if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
             ]), 
             child: Column(
@@ -805,6 +871,41 @@ class _DataScreenState extends State<DataScreen> {
                             ),
                 );
               }
+            ),
+          ],
+          
+          if (_selectedId != null && ['sales','purchases','returns'].contains(widget.screenKey)) ...[
+            const SizedBox(height: 12),
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId], orderBy: 'id DESC'),
+              builder: (context, paymentSnapshot) {
+                final paymentRows = paymentSnapshot.data ?? <Map<String,Object?>>[];
+                final totalPaid = paymentRows.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+                final headerRows = all.where((row) => row['id'] == _selectedId).toList();
+                final header = headerRows.isEmpty ? <String,Object?>{} : headerRows.first;
+                final total = ((header['net'] ?? header['total']) as num?)?.toDouble() ?? 0;
+                return SectionCard(
+                  title: widget.screenKey == 'returns' ? 'تسوية المرتجع' : 'دفعات المستند',
+                  trailing: Text('إجمالي الدفعات: ${totalPaid.toStringAsFixed(2)}'),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (widget.screenKey != 'returns') Text('الصافي: ${total.toStringAsFixed(2)}   |   المتبقي: ${(total-totalPaid).clamp(0,double.infinity).toStringAsFixed(2)}'),
+                    if (paymentSnapshot.hasError) Text('تعذر تحميل الدفعات: ${paymentSnapshot.error}')
+                    else if (paymentRows.isEmpty) const Padding(padding: EdgeInsets.all(12), child: Text('لا توجد دفعات مسجلة لهذا المستند.'))
+                    else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
+                      columns: const [DataColumn(label: Text('التاريخ')), DataColumn(label: Text('الطريقة')), DataColumn(label: Text('المبلغ')), DataColumn(label: Text('المرجع')), DataColumn(label: Text('ملاحظات')), DataColumn(label: Text('إجراء'))],
+                      rows: paymentRows.map((row) => DataRow(cells: [
+                        DataCell(Text((row['payment_date'] ?? '—').toString())),
+                        DataCell(Text((row['method'] ?? 'نقدي').toString())),
+                        DataCell(Text(((row['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                        DataCell(Text((row['reference'] ?? '—').toString())),
+                        DataCell(Text((row['notes'] ?? '—').toString())),
+                        DataCell(IconButton(tooltip: 'حذف الدفعة', onPressed: () => _deletePayment(row), icon: const Icon(Icons.delete_outline, color: Colors.red))),
+                      ])).toList(),
+                    )),
+                    Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: _addPayment, icon: const Icon(Icons.add_card), label: const Text('إضافة دفعة / تسوية'))),
+                  ]),
+                );
+              },
             ),
           ],
           
