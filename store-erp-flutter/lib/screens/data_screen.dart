@@ -609,6 +609,24 @@ class _DataScreenState extends State<DataScreen> {
     }
   }
 
+  String _displayValue(String field, Object? value) {
+    if (value == null) return '—';
+    if (field == 'is_active') {
+      return (value as num?)?.toInt() == 1 ? 'نشط' : 'غير نشط';
+    }
+    final reference = _referenceFields[field];
+    final id = (value as num?)?.toInt() ?? int.tryParse(value.toString());
+    if (reference != null && id != null) {
+      final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+      for (final option in options) {
+        if ((option['id'] as num?)?.toInt() == id) {
+          return '${option[reference.$2] ?? value} (#$id)';
+        }
+      }
+    }
+    return value.toString();
+  }
+
   Future<List<Map<String, Object?>>> _loadRows() async {
     final rows = await context.read<AppProvider>().load(config.table);
     final expectedType = switch (widget.screenKey) {
@@ -696,7 +714,7 @@ class _DataScreenState extends State<DataScreen> {
                                 rows: lineRows.map((r) {
                                   return DataRow(
                                     cells: [
-                                      ...keys.map((k) => DataCell(Text((r[k] ?? '—').toString()))),
+                                      ...keys.map((k) => DataCell(Text(_displayValue(k, r[k]))),
                                       DataCell(
                                         IconButton(
                                           tooltip: 'حذف البند',
@@ -757,7 +775,7 @@ class _DataScreenState extends State<DataScreen> {
                           ...config.columns.map((field) => DataCell(
                             ConstrainedBox(
                               constraints: const BoxConstraints(maxWidth: 220), 
-                              child: Text((row[field] ?? '—').toString(), overflow: TextOverflow.ellipsis)
+                              child: Text(_displayValue(field, row[field]), overflow: TextOverflow.ellipsis)
                             )
                           )), 
                           DataCell(
