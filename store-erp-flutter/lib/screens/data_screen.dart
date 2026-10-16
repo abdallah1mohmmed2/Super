@@ -665,12 +665,15 @@ class _DataScreenState extends State<DataScreen> {
     final referenceController = TextEditingController();
     final notesController = TextEditingController();
     String method = 'نقدي';
+    final paymentMethods = widget.screenKey == 'returns'
+        ? const ['نقدي', 'بطاقة', 'تحويل بنكي', 'شيك', 'على الرصيد']
+        : const ['نقدي', 'بطاقة', 'تحويل بنكي', 'شيك'];
     final ok = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(builder: (ctx, setDialogState) => AlertDialog(
       title: Text(widget.screenKey == 'returns' ? 'إضافة تسوية / دفعة مرتجع' : 'إضافة دفعة'),
       content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
         TextField(controller: amountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'المبلغ')),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: const ['نقدي','بطاقة','تحويل بنكي','شيك'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
+        DropdownButtonFormField<String>(initialValue: method, decoration: const InputDecoration(labelText: 'طريقة السداد'), items: paymentMethods.map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: (v) => setDialogState(() => method = v ?? 'نقدي')),
         const SizedBox(height: 10),
         TextField(controller: referenceController, decoration: const InputDecoration(labelText: 'رقم مرجعي (اختياري)')),
         const SizedBox(height: 10),
