@@ -117,7 +117,7 @@ class _InventoryDocumentsScreenState extends State<InventoryDocumentsScreen> {
           DataCell(Text((d['status'] ?? '—').toString())),
           DataCell(IconButton(tooltip: 'فتح المحدد', onPressed: () => _open(d), icon: const Icon(Icons.open_in_new))),
         ]);
-      }).toList()))),
+      }).toList())))),
       if (busy) const LinearProgressIndicator(),
       Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق'))),
     ]);
