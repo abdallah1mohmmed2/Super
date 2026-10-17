@@ -202,7 +202,7 @@ class DatabaseHelper {
     try {
       final bytes = await header.read(16);
       final signature = String.fromCharCodes(bytes);
-      if (signature != 'SQLite format 3\\u0000') {
+      if (signature != 'SQLite format 3\u0000') {
         throw StateError('الملف المحدد ليس نسخة قاعدة بيانات SQLite');
       }
     } finally {
