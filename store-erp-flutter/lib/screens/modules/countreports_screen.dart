@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:csv/csv.dart';
+import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -92,17 +92,33 @@ class _CountReportsScreenState extends State<CountReportsScreen> {
     await _reload();
   }
 
+  CellValue _excelCell(Object? value) {
+    if (value == null) return TextCellValue('');
+    if (value is bool) return BoolCellValue(value);
+    if (value is int) return IntCellValue(value);
+    if (value is num) return DoubleCellValue(value.toDouble());
+    return TextCellValue(value.toString());
+  }
+
   Future<void> _export() async {
     if (_rows.isEmpty) { _message('لا توجد بيانات لتصديرها'); return; }
     try {
       final docs = await getApplicationDocumentsDirectory();
       final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
       await folder.create(recursive: true);
-      final file = File(p.join(folder.path, 'inventory_count_report_' + DateTime.now().millisecondsSinceEpoch.toString() + '.csv'));
+      final file = File(p.join(folder.path, 'inventory_count_report_' + DateTime.now().millisecondsSinceEpoch.toString() + '.xlsx'));
       final header = ['رقم المستند', 'التاريخ', 'نوع الجرد', 'الحالة', 'المخزن', 'الصنف', 'الكود', 'الرصيد الدفتري', 'الكمية المعدودة', 'الفرق', 'قيمة الفرق'];
       final data = _rows.map((r) => [r['document_no'], r['inventory_date'], r['inventory_type'], r['status'], r['warehouse'], r['product_name'], r['product_code'], r['book_qty'], r['count_qty'], r['difference'], r['difference_cost']]).toList();
-      await file.writeAsString('\uFEFF' + const ListToCsvConverter().convert([header, ...data]), flush: true);
-      _message('تم تصدير التقرير بصيغة CSV المتوافقة مع Excel: ' + file.path);
+      final workbook = Excel.createExcel();
+      final sheet = workbook['تقرير الجرد'];
+      sheet.appendRow(header.map(_excelCell).toList());
+      for (final row in data) {
+        sheet.appendRow(row.map(_excelCell).toList());
+      }
+      final bytes = workbook.encode();
+      if (bytes == null) throw StateError('تعذر إنشاء ملف Excel');
+      await file.writeAsBytes(bytes, flush: true);
+      _message('تم تصدير ملف Excel: ' + file.path);
     } catch (e) {
       _message('تعذر تصدير تقرير الجرد: ' + e.toString());
     }
@@ -121,7 +137,7 @@ class _CountReportsScreenState extends State<CountReportsScreen> {
         ])),
         OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
         const SizedBox(width: 8),
-        FilledButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.file_download_outlined), label: const Text('تصدير CSV')),
+        FilledButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.file_download_outlined), label: const Text('تصدير Excel (.xlsx)')),
       ]),
       const SizedBox(height: 12),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing: 12, runSpacing: 12, children: [
