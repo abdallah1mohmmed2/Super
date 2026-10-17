@@ -3,7 +3,8 @@ import '../../data/database_helper.dart';
 
 class InventoryCountScreen extends StatefulWidget {
   final String countType;
-  const InventoryCountScreen({super.key, required this.countType});
+  final int? initialDocumentId;
+  const InventoryCountScreen({super.key, required this.countType, this.initialDocumentId});
   @override
   State<InventoryCountScreen> createState() => _InventoryCountScreenState();
 }
@@ -54,6 +55,10 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       });
     } catch (e) { msg('تعذر تحميل بيانات الجرد: $e'); }
     finally { if (mounted) setState(() => busy = false); }
+    if (widget.initialDocumentId != null && documentId == null) {
+      final matches = documents.where((d) => (d['id'] as num).toInt() == widget.initialDocumentId);
+      if (matches.isNotEmpty) await _openDocument(matches.first);
+    }
   }
 
   Future<void> _newDocument() async {
