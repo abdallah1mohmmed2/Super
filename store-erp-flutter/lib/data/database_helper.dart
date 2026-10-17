@@ -356,12 +356,12 @@ class DatabaseHelper {
             ((approvalCustomers.first['manager_approval'] as num?)?.toInt() ?? 0) == 1) {
           final approvals = await txn.query(
             'approval_requests',
-            where: 'entity_type=? AND entity_id=? AND status=?',
-            whereArgs: ['sales', saleId, 'معتمد'],
+            where: 'entity_type=? AND entity_id=?',
+            whereArgs: ['sales', saleId],
             orderBy: 'id DESC',
             limit: 1,
           );
-          if (approvals.isEmpty) {
+          if (approvals.isEmpty || approvals.first['status'] != 'معتمد') {
             throw StateError('هذا العميل يتطلب موافقة المدير قبل ترحيل الفاتورة');
           }
         }
