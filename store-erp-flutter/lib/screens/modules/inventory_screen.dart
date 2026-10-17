@@ -1,5 +1,6 @@
 import 'dart:io';
 import 'package:csv/csv.dart';
+import 'package:excel/excel.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
@@ -125,6 +126,14 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     }).toList())));
   }
 
+  CellValue _excelCell(Object? value) {
+    if (value == null) return TextCellValue('');
+    if (value is bool) return BoolCellValue(value);
+    if (value is int) return IntCellValue(value);
+    if (value is num) return DoubleCellValue(value.toDouble());
+    return TextCellValue(value.toString());
+  }
+
   Future<void> exportCurrentTab() async {
     final rows = switch (tabs.index) {
       1 => lowRows,
@@ -164,9 +173,18 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       final docs = await getApplicationDocumentsDirectory();
       final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
       await folder.create(recursive: true);
-      final file = File(p.join(folder.path, 'inventory_${DateTime.now().millisecondsSinceEpoch}.csv'));
-      await file.writeAsString('\uFEFF${const ListToCsvConverter().convert([header, ...data])}', flush: true);
-      msg('تم التصدير بصيغة CSV المتوافقة مع Excel: ${file.path}');
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final workbook = Excel.createExcel();
+      final sheet = workbook['المخزون'];
+      sheet.appendRow(header.map(_excelCell).toList());
+      for (final row in data) {
+        sheet.appendRow(row.map(_excelCell).toList());
+      }
+      final bytes = workbook.encode();
+      if (bytes == null) throw StateError('تعذر إنشاء ملف Excel');
+      final file = File(p.join(folder.path, 'inventory_$timestamp.xlsx'));
+      await file.writeAsBytes(bytes, flush: true);
+      msg('تم تصدير ملف Excel: ${file.path}');
     } catch (e) {
       msg('تعذر تصدير المخزون: $e');
     }
