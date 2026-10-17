@@ -18,6 +18,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   List<Map<String, Object?>> warehouses = [], products = [], documents = [], items = [], categories = [];
   int? warehouseId, categoryId, documentId, selectedItemId;
   DateTime inventoryDate = DateTime.now();
+  int selectedMonth = DateTime.now().month, selectedYear = DateTime.now().year;
   bool includeZero = false, busy = false;
   String status = 'مسودة';
   String get typeLabel => switch (widget.countType) {
@@ -94,6 +95,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       notes.text = (doc['notes'] ?? '').toString();
       warehouseId = (doc['warehouse_id'] as num?)?.toInt();
       inventoryDate = DateTime.tryParse((doc['inventory_date'] ?? '').toString()) ?? DateTime.now();
+      selectedMonth = inventoryDate.month; selectedYear = inventoryDate.year;
       items = rows.map((r) => Map<String, Object?>.from(r)).toList();
       selectedItemId = null;
     });
@@ -191,7 +193,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
 
   Future<void> _pickDate() async {
     final value = await showDatePicker(context: context, initialDate: inventoryDate, firstDate: DateTime(2000), lastDate: DateTime(2100));
-    if (value != null && mounted) setState(() => inventoryDate = value);
+    if (value != null && mounted) setState(() { inventoryDate = value; selectedMonth = value.month; selectedYear = value.year; });
   }
 
   @override
@@ -218,7 +220,19 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
           onChanged: status == 'مسودة' ? (v) => setState(() => warehouseId = v) : null,
         )),
         SizedBox(width: 220, child: TextField(controller: number, decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
-        OutlinedButton.icon(onPressed: _pickDate, icon: const Icon(Icons.calendar_month), label: Text(dateText(inventoryDate))),
+        OutlinedButton.icon(onPressed: status == 'مسودة' ? _pickDate : null, icon: const Icon(Icons.calendar_month), label: Text(dateText(inventoryDate))),
+        if (widget.countType == 'monthlycount') SizedBox(width: 170, child: DropdownButtonFormField<int>(
+          value: selectedMonth,
+          decoration: const InputDecoration(labelText: 'الشهر', border: OutlineInputBorder()),
+          items: List.generate(12, (i) => i + 1).map((m) => DropdownMenuItem(value: m, child: Text('الشهر ${m.toString().padLeft(2, '0')}'))).toList(),
+          onChanged: status != 'مسودة' ? null : (m) { if (m != null) setState(() { selectedMonth = m; inventoryDate = DateTime(selectedYear, selectedMonth, 1); }); },
+        )),
+        if (widget.countType == 'monthlycount' || widget.countType == 'yearlycount') SizedBox(width: 150, child: DropdownButtonFormField<int>(
+          value: selectedYear,
+          decoration: const InputDecoration(labelText: 'السنة', border: OutlineInputBorder()),
+          items: List.generate(21, (i) => DateTime.now().year - 10 + i).map((y) => DropdownMenuItem(value: y, child: Text(y.toString()))).toList(),
+          onChanged: status != 'مسودة' ? null : (y) { if (y != null) setState(() { selectedYear = y; inventoryDate = widget.countType == 'monthlycount' ? DateTime(selectedYear, selectedMonth, 1) : DateTime(selectedYear, 1, 1); }); },
+        )),
         SizedBox(width: 120, child: TextField(controller: limit, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'حد التحميل', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: busy ? null : _newDocument, icon: const Icon(Icons.add), label: const Text('مستند جديد')),
         OutlinedButton.icon(onPressed: busy ? null : () async {
@@ -281,6 +295,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       ]))),
       if (busy) const LinearProgressIndicator(),
       Text('ملخص الفرق: زيادة $increase • عجز $decrease • صافي قيمة الفرق ${diffValue.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
+      if (widget.countType == 'yearlycount') Text('نسبة الإنجاز: ${items.isEmpty ? 0 : (counted * 100 / items.length).round()}%'),
+      if (widget.countType == 'monthlycount') Text('فترة الجرد: ${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}'),
       TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظات المستند', border: OutlineInputBorder())),
     ]);
   }
