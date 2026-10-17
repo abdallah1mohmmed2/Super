@@ -204,7 +204,7 @@ class _BackupScreenState extends State<BackupScreen> {
       _info('الخادم', 'قاعدة بيانات محلية على هذا الجهاز'),
       _info('قاعدة البيانات', 'local_store.db'),
       _info('نوع المصادقة', 'مصادقة التطبيق'),
-      _info('المستخدم النشط', 'المستخدم المسجل في التطبيق'),
+      _info('المستخدم النشط', context.watch<AppProvider>().currentUser.isEmpty ? '—' : context.watch<AppProvider>().currentUser),
       const SizedBox(height: 6),
       const Text('النسخ يحفظ ملف قاعدة البيانات المحلي ولا يرسل البيانات إلى خادم خارجي.', style: TextStyle(color: Colors.blueGrey)),
     ]),
