@@ -15,7 +15,14 @@ class DashboardScreen extends StatelessWidget {
       builder: (context, snapshot) {
         final data = snapshot.data ?? _DashboardData.empty();
         return ListView(padding: const EdgeInsets.all(20), children: [
-          const Text('لوحة التحكم', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          Row(children: [
+            const Expanded(child: Text('لوحة التحكم', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
+            OutlinedButton.icon(
+              onPressed: () { context.read<AppProvider>().refresh(); },
+              icon: const Icon(Icons.refresh),
+              label: const Text('تحديث المؤشرات'),
+            ),
+          ]),
           const SizedBox(height: 6),
           Text('نظرة عامة على أداء المتجر والمخزون', style: TextStyle(color: Colors.blueGrey.shade600)),
           const SizedBox(height: 18),
@@ -25,6 +32,8 @@ class DashboardScreen extends StatelessWidget {
             StatCard(title: 'المشتريات', value: _money(data.purchaseTotal), icon: Icons.shopping_cart_outlined, color: AppTheme.sky),
             StatCard(title: 'قيمة المخزون التقديرية', value: _money(data.stockValue), icon: Icons.inventory_2_outlined, color: Colors.deepPurple),
             StatCard(title: 'ذمم العملاء', value: _money(data.customerBalances), icon: Icons.people_alt_outlined, color: Colors.orange),
+            StatCard(title: 'اعتمادات معلقة', value: data.pendingApprovals.toString(), icon: Icons.fact_check_outlined, color: Colors.deepOrange),
+            StatCard(title: 'دفعات منتهية', value: data.expiredBatchCount.toString(), icon: Icons.event_busy_outlined, color: Colors.redAccent),
           ]),
           const SizedBox(height: 14),
           GridView.count(crossAxisCount: MediaQuery.sizeOf(context).width > 1000 ? 3 : 1, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 14, mainAxisSpacing: 14, childAspectRatio: 1.8, children: [
@@ -32,7 +41,9 @@ class DashboardScreen extends StatelessWidget {
             _dashboardCard(context, 'فواتير المشتريات', Icons.shopping_cart, () => onOpen('purchases'), '${data.purchaseCount} فاتورة'),
             _dashboardCard(context, 'الأصناف', Icons.category, () => onOpen('products'), '${data.productCount} صنف'),
             _dashboardCard(context, 'العملاء', Icons.people, () => onOpen('customers'), '${data.customerCount} عميل'),
-            _dashboardCard(context, 'تنبيهات قرب النفاد', Icons.warning_amber, () => onOpen('inventory'), '${data.lowStockCount} صنف رصيده صفر أو أقل'),
+            _dashboardCard(context, 'تنبيهات قرب النفاد', Icons.warning_amber, () => onOpen('inventory'), '${data.lowStockCount} صنف عند/دون حد إعادة الطلب'),
+            _dashboardCard(context, 'اعتمادات المدير', Icons.verified_user_outlined, () => onOpen('approvals'), '${data.pendingApprovals} طلب معلق'),
+            _dashboardCard(context, 'تنبيهات انتهاء الدفعات', Icons.event_busy_outlined, () => onOpen('inventory'), '${data.expiredBatchCount} دفعة منتهية'),
             _dashboardCard(context, 'الجرد والمستندات', Icons.fact_check, () => onOpen('countdocs'), 'فتح مستندات الجرد'),
           ]),
           if (snapshot.hasError) Padding(padding: const EdgeInsets.only(top: 12), child: Text('تعذر تحديث بعض المؤشرات: ${snapshot.error}', style: const TextStyle(color: Colors.red))),
@@ -48,15 +59,28 @@ class DashboardScreen extends StatelessWidget {
     final inventory = await db.query('inventory');
     final products = await db.query('products');
     final customers = await db.query('customers');
+    final reorder = await db.query('reorder_levels');
+    final batches = await db.query('product_batches');
+    final approvals = await db.query('approval_requests', where: 'status=?', whereArgs: ['معلق']);
     final today = DateTime.now().toIso8601String().substring(0, 10);
     double sum(List<Map<String,Object?>> rows, String field) => rows.fold<double>(0, (total, row) => total + ((row[field] as num?)?.toDouble() ?? 0));
+    double qtyFor(Object? productId, Object? warehouseId) {
+      final rows = inventory.where((r) => r['product_id'] == productId && r['warehouse_id'] == warehouseId);
+      return rows.isEmpty ? 0 : ((rows.first['qty'] as num?)?.toDouble() ?? 0);
+    }
+    final lowStockCount = reorder.where((r) => qtyFor(r['product_id'], r['warehouse_id']) <= ((r['minimum'] as num?)?.toDouble() ?? 0)).length;
+    final expiredBatchCount = batches.where((r) {
+      final qty = (r['qty'] as num?)?.toDouble() ?? 0;
+      final expiry = DateTime.tryParse((r['expiry_date'] ?? '').toString());
+      return qty > 0 && expiry != null && expiry.isBefore(DateTime.now());
+    }).length;
     return _DashboardData(
       todaySales: sum(sales.where((r) => (r['invoice_date']?.toString() ?? '').startsWith(today) && r['status'] == 'مرحل').toList(), 'net'),
       purchaseTotal: sum(purchases.where((r) => r['status'] == 'مرحل').toList(), 'net'),
       stockValue: inventory.fold<double>(0, (total, row) { final product = products.where((p) => p['id'] == row['product_id']); final cost = product.isEmpty ? 0.0 : ((product.first['cost_price'] as num?)?.toDouble() ?? 0); return total + cost * ((row['qty'] as num?)?.toDouble() ?? 0); }),
       customerBalances: sum(customers, 'balance'), salesCount: sales.length, purchaseCount: purchases.length,
       productCount: products.length, customerCount: customers.length,
-      lowStockCount: inventory.where((r) => ((r['qty'] as num?)?.toDouble() ?? 0) <= 0).length,
+      lowStockCount: lowStockCount, pendingApprovals: approvals.length, expiredBatchCount: expiredBatchCount,
     );
   }
   String _money(double value) => value.toStringAsFixed(2);
@@ -65,7 +89,7 @@ class DashboardScreen extends StatelessWidget {
 
 class _DashboardData {
   final double todaySales, purchaseTotal, stockValue, customerBalances;
-  final int salesCount, purchaseCount, productCount, customerCount, lowStockCount;
-  const _DashboardData({this.todaySales=0,this.purchaseTotal=0,this.stockValue=0,this.customerBalances=0,this.salesCount=0,this.purchaseCount=0,this.productCount=0,this.customerCount=0,this.lowStockCount=0});
+  final int salesCount, purchaseCount, productCount, customerCount, lowStockCount, pendingApprovals, expiredBatchCount;
+  const _DashboardData({this.todaySales=0,this.purchaseTotal=0,this.stockValue=0,this.customerBalances=0,this.salesCount=0,this.purchaseCount=0,this.productCount=0,this.customerCount=0,this.lowStockCount=0,this.pendingApprovals=0,this.expiredBatchCount=0});
   factory _DashboardData.empty() => const _DashboardData();
 }
