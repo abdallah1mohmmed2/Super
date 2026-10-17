@@ -21,7 +21,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   bool loading = false;
 
   @override
-  void initState() { super.initState(); tabs = TabController(length: 4, vsync: this); reload(); }
+  void initState() { super.initState(); tabs = TabController(length: 5, vsync: this); reload(); }
   @override
   void dispose() { tabs.dispose(); search.dispose(); super.dispose(); }
   void msg(String value) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value))); }
@@ -61,6 +61,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     final minimum = level.isEmpty ? 0.0 : numv(level.first['minimum']);
     return numv(r['qty']) <= minimum;
   }).toList();
+  List<Map<String,Object?>> get reorderRows => reorder.where((r) => matches(r)).toList();
   List<Map<String,Object?>> get expiredRows => batches.where((r) => matches(r,batch:true) && DateTime.tryParse((r['expiry_date']??'').toString())?.isBefore(DateTime.now()) == true).toList();
   List<Map<String,Object?>> get expiringRows => batches.where((r) {
     if (!matches(r,batch:true)) return false;
@@ -74,7 +75,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   Widget metric(String title,String value,IconData icon) => SizedBox(width:220,child:Card(child:ListTile(leading:Icon(icon),title:Text(title),subtitle:Text(value,style:const TextStyle(fontSize:19,fontWeight:FontWeight.bold)))));
   @override
   Widget build(BuildContext context) => ListView(padding:const EdgeInsets.all(18),children:[
-    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),FilledButton.icon(onPressed:exportCurrentTab,icon:const Icon(Icons.file_download_outlined),label:const Text('تصدير Excel / CSV')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('طباعة / معاينة'))]),
+    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),FilledButton.icon(onPressed:exportCurrentTab,icon:const Icon(Icons.file_download_outlined),label:const Text('تصدير CSV لبرنامج Excel')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('طباعة / معاينة'))]),
     const SizedBox(height:12),
     Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:12,runSpacing:12,children:[
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:warehouseId,decoration:const InputDecoration(labelText:'المخزن'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...warehouses.map((w)=>DropdownMenuItem(value:(w['id'] as num).toInt(),child:Text('${w['name']}')))],onChanged:(v)=>setState(()=>warehouseId=v))),
@@ -90,13 +91,29 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     ]),
     if(loading) const LinearProgressIndicator(),
     Card(child:Column(children:[
-      TabBar(controller:tabs,isScrollable:true,tabs:const[Tab(text:'رصيد المخزون'),Tab(text:'قرب النفاد'),Tab(text:'منتهي الصلاحية'),Tab(text:'قرب الانتهاء')]),
+      TabBar(controller:tabs,isScrollable:true,tabs:const[Tab(text:'رصيد المخزون'),Tab(text:'قرب النفاد'),Tab(text:'منتهي الصلاحية'),Tab(text:'قرب الانتهاء'),Tab(text:'حد إعادة الطلب')]),
       SizedBox(height:500,child:TabBarView(controller:tabs,children:[
-        table(stockRows,false),table(lowRows,false),table(expiredRows,true),table(expiringRows,true),
+        table(stockRows,false),table(lowRows,false),table(expiredRows,true),table(expiringRows,true),tableReorder(reorderRows),
       ])),
     ])),
     const Padding(padding:EdgeInsets.only(top:8),child:Text('الأرصدة للعرض فقط وتتغير من المستندات المرحلة. يمكن تصدير الجداول لاحقًا كملف Excel أصلي؛ الطباعة الحالية معاينة داخل التطبيق.',style:TextStyle(color:Colors.blueGrey))),
   ]);
+
+  Widget tableReorder(List<Map<String,Object?>> rows) {
+    if (rows.isEmpty) return const Center(child: Text('لا توجد حدود إعادة طلب مطابقة للفلاتر.'));
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
+      columns: const [DataColumn(label: Text('الصنف')), DataColumn(label: Text('الكود')), DataColumn(label: Text('المخزن')), DataColumn(label: Text('الحد الأدنى')), DataColumn(label: Text('الحد الأعلى')), DataColumn(label: Text('الرصيد الحالي')), DataColumn(label: Text('الحالة'))],
+      rows: rows.map((r) {
+        final p = product(r['product_id']);
+        final qtyRow = inventory.where((x) => x['product_id'] == r['product_id'] && x['warehouse_id'] == r['warehouse_id']);
+        final qty = qtyRow.isEmpty ? 0.0 : numv(qtyRow.first['qty']);
+        final min = numv(r['minimum']);
+        final max = numv(r['maximum']);
+        final status = qty <= min ? 'يحتاج إعادة طلب' : (max > 0 && qty > max ? 'يتجاوز الحد الأعلى' : 'ضمن الحدود');
+        return DataRow(cells: [DataCell(Text((p?['name'] ?? '—').toString())), DataCell(Text((p?['code'] ?? '—').toString())), DataCell(Text((warehouse(r['warehouse_id'])?['name'] ?? '—').toString())), DataCell(Text(money(min))), DataCell(Text(money(max))), DataCell(Text(money(qty))), DataCell(Text(status))]);
+      }).toList(),
+    ));
+  }
 
   Widget table(List<Map<String,Object?>> rows,bool withBatch) {
     if(rows.isEmpty)return const Center(child:Text('لا توجد بيانات مطابقة.'));
@@ -113,18 +130,29 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       1 => lowRows,
       2 => expiredRows,
       3 => expiringRows,
+      4 => reorderRows,
       _ => stockRows,
     };
     if (rows.isEmpty) {
       msg('لا توجد بيانات لتصديرها');
       return;
     }
-    final isBatchTab = tabs.index >= 2;
-    final header = isBatchTab
-        ? ['الصنف', 'الكود', 'المخزن', 'الدفعة', 'الكمية', 'تاريخ الانتهاء']
-        : ['الصنف', 'الكود', 'القسم', 'المخزن', 'الرصيد', 'تكلفة الوحدة', 'قيمة الرصيد'];
+    final isReorderTab = tabs.index == 4;
+    final isBatchTab = tabs.index == 2 || tabs.index == 3;
+    final header = isReorderTab
+        ? ['الصنف', 'الكود', 'المخزن', 'الحد الأدنى', 'الحد الأعلى', 'الرصيد الحالي', 'الحالة']
+        : isBatchTab
+            ? ['الصنف', 'الكود', 'المخزن', 'الدفعة', 'الكمية', 'تاريخ الانتهاء']
+            : ['الصنف', 'الكود', 'القسم', 'المخزن', 'الرصيد', 'تكلفة الوحدة', 'قيمة الرصيد'];
     final data = rows.map((row) {
       final item = product(row['product_id']);
+      if (isReorderTab) {
+        final qtyRows = inventory.where((x) => x['product_id'] == row['product_id'] && x['warehouse_id'] == row['warehouse_id']);
+        final qty = qtyRows.isEmpty ? 0.0 : numv(qtyRows.first['qty']);
+        final min = numv(row['minimum']);
+        final max = numv(row['maximum']);
+        return [item?['name'] ?? '', item?['code'] ?? '', warehouse(row['warehouse_id'])?['name'] ?? '', min, max, qty, qty <= min ? 'يحتاج إعادة طلب' : (max > 0 && qty > max ? 'يتجاوز الحد الأعلى' : 'ضمن الحدود')];
+      }
       if (isBatchTab) {
         return [item?['name'] ?? '', item?['code'] ?? '', warehouse(row['warehouse_id'])?['name'] ?? '', row['batch_no'] ?? '', row['qty'] ?? 0, row['expiry_date'] ?? ''];
       }
@@ -145,8 +173,8 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   }
 
   Future<void> showPrintPreview() async {
-    final rows=switch(tabs.index){1=>lowRows,2=>expiredRows,3=>expiringRows,_=>stockRows};
-    final title=switch(tabs.index){1=>'قرب النفاد',2=>'منتهي الصلاحية',3=>'قرب الانتهاء',_=>'رصيد المخزون'};
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text('معاينة طباعة — $title'),content:SizedBox(width:620,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('عدد السجلات: ${rows.length}'),Text('القيمة التقديرية للمخزون: ${money(stockValue)}'),const Divider(),...rows.take(80).map((r)=>Text('${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | كمية: ${r['qty']??0} | انتهاء: ${r['expiry_date']??'—'}'))]))),actions:[FilledButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))]));
+    final rows=switch(tabs.index){1=>lowRows,2=>expiredRows,3=>expiringRows,4=>reorderRows,_=>stockRows};
+    final title=switch(tabs.index){1=>'قرب النفاد',2=>'منتهي الصلاحية',3=>'قرب الانتهاء',4=>'حد إعادة الطلب',_=>'رصيد المخزون'};
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text('معاينة طباعة — $title'),content:SizedBox(width:620,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('عدد السجلات: ${rows.length}'),Text('القيمة التقديرية للمخزون: ${money(stockValue)}'),const Divider(),...rows.take(80).map((r)=>Text(tabs.index == 4 ? '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | الحد الأدنى: ${r['minimum']??0} | الحد الأعلى: ${r['maximum']??0}' : '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | كمية: ${r['qty']??0} | انتهاء: ${r['expiry_date']??'—'}'))]))),actions:[FilledButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))]));
   }
 }
