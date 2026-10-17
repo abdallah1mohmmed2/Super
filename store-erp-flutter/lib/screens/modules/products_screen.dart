@@ -1,3 +1,7 @@
+import 'dart:io';
+import 'package:csv/csv.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
 import '../../data/database_helper.dart';
 import '../../widgets/common_widgets.dart';
@@ -173,13 +177,32 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     );
   }
 
-  @override Widget build(BuildContext context){
+  @override   Future<void> exportProducts() async {
+    final visible = products.where((row) => filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(filter.toLowerCase()))).toList();
+    if (visible.isEmpty) { msg('لا توجد أصناف لتصديرها'); return; }
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
+      await folder.create(recursive: true);
+      final file = File(p.join(folder.path, 'products_' + DateTime.now().millisecondsSinceEpoch.toString() + '.csv'));
+      final header = ['المعرف', 'الكود', 'اسم الصنف', 'الاسم الإنجليزي', 'التصنيف', 'الوحدة', 'طريقة البيع', 'سعر التكلفة', 'سعر البيع', 'تتبع المخزون', 'السماح بالسالب', 'نشط', 'ملاحظات'];
+      final data = visible.map((row) {
+        final category = categories.where((x) => x['id'] == row['category_id']);
+        return [row['id'], row['code'], row['name'], row['english_name'], category.isEmpty ? '' : category.first['name'], row['unit'], row['sale_method'], row['cost_price'], row['sale_price'], row['stock_tracking'], row['negative_stock'], row['is_active'], row['notes']];
+      }).toList();
+      await file.writeAsString('\\uFEFF' + const ListToCsvConverter().convert([header, ...data]), flush: true);
+      msg('تم تصدير الأصناف بصيغة CSV المتوافقة مع Excel: ' + file.path);
+    } catch (e) { msg('تعذر تصدير الأصناف: ' + e.toString()); }
+  }
+
+Widget build(BuildContext context){
     final visible=products.where((p)=>filter.isEmpty||p.values.any((v)=>v.toString().toLowerCase().contains(filter.toLowerCase()))).toList();
     return Padding(padding:const EdgeInsets.all(14),child:Column(children:[
       Wrap(spacing:8,runSpacing:8,children:[
         ActionButton('جديد',icon:Icons.add,onPressed:clearForm),
         ActionButton('حفظ',icon:Icons.save,primary:true,onPressed:busy?()=>{}:saveProduct),
         ActionButton('تحديث',icon:Icons.refresh,onPressed:reload),
+        ActionButton('تصدير CSV',icon:Icons.file_download_outlined,onPressed:exportProducts),
         ActionButton('تفريغ',icon:Icons.cleaning_services,onPressed:clearForm),
         ActionButton('حذف',icon:Icons.delete_outline,onPressed:deleteProduct),
         ActionButton('إغلاق',icon:Icons.close,onPressed:()=>Navigator.maybePop(context)),
