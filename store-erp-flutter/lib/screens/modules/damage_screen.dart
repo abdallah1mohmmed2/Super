@@ -15,7 +15,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   final _qty = TextEditingController(text: '1');
   final _batch = TextEditingController();
   final _cost = TextEditingController(text: '0');
-  List<Map<String, Object?>> warehouses = [], products = [], docs = [], lines = [], batches = [];
+  List<Map<String, Object?>> warehouses = [], products = [], docs = [], lines = [], batches = [], barcodes = [];
   int? warehouseId, productId, selectedLineId, documentId, batchId;
   DateTime date = DateTime.now();
   String documentType = 'تالف', status = 'مسودة', reason = 'تالف';
@@ -33,9 +33,10 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     try {
       final w = await db.query('warehouses', where: 'is_active=1', orderBy: 'name');
       final p = await db.query('products', where: 'is_active=1', orderBy: 'name');
+      final b = await db.query('barcodes', orderBy: 'barcode');
       final d = await db.query('damage_documents', orderBy: 'document_date DESC', limit: 300);
       if (!mounted) return;
-      setState(() { warehouses = w; products = p; docs = d; warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt(); });
+      setState(() { warehouses = w; products = p; barcodes = b; docs = d; warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt(); });
       await _loadBatches();
     } catch (e) { msg('تعذر تحميل سندات التالف: $e'); }
   }
@@ -148,7 +149,11 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   @override
   Widget build(BuildContext context) {
     final q = _productSearch.text.trim().toLowerCase();
-    final matches = products.where((p) => q.isEmpty || (p['name'] ?? '').toString().toLowerCase().contains(q) || (p['code'] ?? '').toString().toLowerCase().contains(q)).take(50).toList();
+    final matches = products.where((p) {
+      if (q.isEmpty || (p['name'] ?? '').toString().toLowerCase().contains(q) || (p['code'] ?? '').toString().toLowerCase().contains(q)) return true;
+      final id = (p['id'] as num?)?.toInt();
+      return barcodes.any((b) => (b['product_id'] as num?)?.toInt() == id && (b['barcode'] ?? '').toString().toLowerCase().contains(q));
+    }).take(50).toList();
     final total = lines.fold<double>(0, (sum, r) => sum + n(r['qty']) * n(r['estimated_cost']));
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [const Expanded(child: Text('سند التالف والمنتهي', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold))), Chip(label: Text(status))]),
@@ -165,7 +170,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('إدخال الصنف', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
-        TextField(controller: _productSearch, decoration: const InputDecoration(labelText: 'بحث بالاسم أو الكود', prefixIcon: Icon(Icons.search), border: OutlineInputBorder()), onChanged: (_) => setState(() {})),
+        TextField(controller: _productSearch, decoration: const InputDecoration(labelText: 'بحث بالاسم أو الكود أو الباركود', prefixIcon: Icon(Icons.search), border: OutlineInputBorder()), onChanged: (_) => setState(() {})),
         const SizedBox(height: 8),
         Wrap(spacing: 12, runSpacing: 12, children: [
           SizedBox(width: 300, child: DropdownButtonFormField<int>(value: products.any((p) => (p['id'] as num).toInt() == productId) ? productId : null, decoration: const InputDecoration(labelText: 'الصنف المختار', border: OutlineInputBorder()), items: matches.map((p) => DropdownMenuItem(value: (p['id'] as num).toInt(), child: Text('${p['name']} • ${p['code'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() { productId = v; final p = products.firstWhere((p) => (p['id'] as num).toInt() == v); _cost.text = n(p['cost_price']).toStringAsFixed(2); }); _loadBatches(); } : null)),
