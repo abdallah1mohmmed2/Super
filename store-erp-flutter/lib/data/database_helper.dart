@@ -185,6 +185,43 @@ class DatabaseHelper {
 
   Future<String> get databasePath async { final dir = await getApplicationSupportDirectory(); return p.join(dir.path, 'local_store.db'); }
 
+  /// Flush pending SQLite pages before a file-level backup.
+  Future<void> prepareForBackup() async {
+    final db = await database;
+    await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
+  }
+
+  /// Replaces the local database with a validated backup file.
+  /// The current database connection is closed before the file is replaced.
+  Future<void> restoreDatabaseFrom(String sourcePath) async {
+    final source = File(sourcePath);
+    if (!await source.exists()) throw StateError('ملف النسخة المحدد غير موجود');
+    if (await source.length() < 100) throw StateError('ملف النسخة غير صالح أو فارغ');
+    final header = await source.open(mode: FileMode.read);
+    try {
+      final bytes = await header.read(16);
+      final signature = String.fromCharCodes(bytes);
+      if (signature != 'SQLite format 3\\u0000') {
+        throw StateError('الملف المحدد ليس نسخة قاعدة بيانات SQLite');
+      }
+    } finally {
+      await header.close();
+    }
+
+    final targetPath = await databasePath;
+    final target = File(targetPath);
+    await target.parent.create(recursive: true);
+    await _db?.close();
+    _db = null;
+    try {
+      await source.copy(targetPath);
+      await database; // Re-open and validate the restored database.
+    } catch (_) {
+      _db = null;
+      rethrow;
+    }
+  }
+
   Future<List<Map<String, Object?>>> query(String table, {String? where, List<Object?>? whereArgs, String? orderBy, int? limit, int? offset}) async => (await database).query(table, where: where, whereArgs: whereArgs, orderBy: orderBy, limit: limit, offset: offset);
   Future<int> insert(String table, Map<String, Object?> values) async => (await database).insert(table, values, conflictAlgorithm: ConflictAlgorithm.abort);
   Future<int> update(String table, Map<String, Object?> values, {required String where, required List<Object?> whereArgs}) async => (await database).update(table, values, where: where, whereArgs: whereArgs);
