@@ -86,6 +86,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     setState(() {
       documentId = id; number.text = (doc['document_no'] ?? '').toString();
       status = (doc['status'] ?? 'مسودة').toString();
+      notes.text = (doc['notes'] ?? '').toString();
       warehouseId = (doc['warehouse_id'] as num?)?.toInt();
       inventoryDate = DateTime.tryParse((doc['inventory_date'] ?? '').toString()) ?? DateTime.now();
       items = rows.map((r) => Map<String, Object?>.from(r)).toList();
@@ -133,6 +134,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       await db.update('inventory_documents', {
         'document_no': number.text.trim().isEmpty ? 'CNT-$documentId' : number.text.trim(),
         'inventory_date': dateText(inventoryDate), 'warehouse_id': warehouseId,
+        'notes': notes.text.trim(),
       }, where: 'id=?', whereArgs: [documentId]);
       for (final item in items) {
         final book = n(item['book_qty']), counted = n(item['count_qty']);
