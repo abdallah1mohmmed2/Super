@@ -640,6 +640,17 @@ class _DataScreenState extends State<DataScreen> {
       final header = headerRows.first;
       
       if (widget.screenKey == 'sales') {
+        final customerId = (header['customer_id'] as num?)?.toInt();
+        if (customerId != null) {
+          final customerRows = await db.query('customers', where: 'id=?', whereArgs: [customerId], limit: 1);
+          final requiresApproval = customerRows.isNotEmpty && ((customerRows.first['manager_approval'] as num?)?.toInt() ?? 0) == 1;
+          if (requiresApproval) {
+            final requests = await db.query('approval_requests', where: 'entity_type=? AND entity_id=?', whereArgs: ['sales', _selectedId], orderBy: 'id DESC', limit: 1);
+            if (requests.isEmpty || requests.first['status'] != 'معتمد') {
+              throw StateError('هذه الفاتورة تحتاج اعتماد المدير قبل الترحيل');
+            }
+          }
+        }
         if (header['warehouse_id'] == null || header['cash_box_id'] == null) {
           throw StateError('حدد المخزن والصندوق في رأس فاتورة المبيعات قبل الترحيل');
         }
