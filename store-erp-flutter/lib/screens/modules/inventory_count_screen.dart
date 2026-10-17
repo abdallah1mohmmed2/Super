@@ -267,7 +267,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
           DataCell(Text(difference.toStringAsFixed(2))),
           DataCell(Text((difference * n(product?['cost_price'])).toStringAsFixed(2))),
         ]);
-      }).toList()))),
+      }).toList())))),
       Card(child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 10, runSpacing: 8, children: [
         OutlinedButton.icon(onPressed: _busy ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
         OutlinedButton.icon(onPressed: _busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
