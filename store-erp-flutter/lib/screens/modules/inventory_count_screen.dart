@@ -209,6 +209,21 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     finally { if (mounted) setState(() => busy = false); }
   }
 
+  void _recalculate() {
+    setState(() {
+      items = items.map((item) {
+        final product = products.where((p) => (p['id'] as num?)?.toInt() == (item['product_id'] as num?)?.toInt()).firstOrNull;
+        final difference = n(item['count_qty']) - n(item['book_qty']);
+        return <String, Object?>{
+          ...item,
+          'difference': difference,
+          'difference_cost': difference * n(product?['cost_price']),
+        };
+      }).toList();
+    });
+    msg('تمت إعادة حساب كميات الفروقات وقيمتها');
+  }
+
   Future<void> _cancelDocument() async {
     if (documentId == null) { msg('حدد مستندًا أولًا'); return; }
     if (status == 'مرحل' || status == 'ملغي') { msg('لا يمكن إلغاء مستند مرحل أو ملغي'); return; }
@@ -332,7 +347,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
             enabled: status == 'مسودة',
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-            onChanged: (v) { final idx = items.indexWhere((x) => x['id'] == r['id']); if (idx >= 0) setState(() => items[idx]['count_qty'] = double.tryParse(v) ?? 0); },
+            onChanged: (v) { final idx = items.indexWhere((x) => x['id'] == r['id']); if (idx >= 0) { final countedValue = double.tryParse(v) ?? 0; final differenceValue = countedValue - n(r['book_qty']); setState(() { items[idx]['count_qty'] = countedValue; items[idx]['difference'] = differenceValue; items[idx]['difference_cost'] = differenceValue * n(product?['cost_price']); }); } },
           ))),
           DataCell(Text(difference.toStringAsFixed(2))),
           DataCell(Text((difference * n(product?['cost_price'])).toStringAsFixed(2))),
@@ -343,6 +358,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         OutlinedButton.icon(onPressed: busy || status == 'ملغي' || status == 'مرحل' ? null : _cancelDocument, icon: const Icon(Icons.cancel_outlined), label: const Text('إلغاء')),
         OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
         FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
+        OutlinedButton.icon(onPressed: busy ? null : _recalculate, icon: const Icon(Icons.calculate_outlined), label: const Text('إعادة الحساب')),
         OutlinedButton.icon(onPressed: busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
         OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
