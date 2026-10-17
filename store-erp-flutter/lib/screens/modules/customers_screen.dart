@@ -12,7 +12,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
   final db = DatabaseHelper.instance;
   final search = TextEditingController();
   final fields = {
-    for (final f in ['name', 'code', 'phone', 'mobile', 'address', 'credit_limit', 'balance'])
+    for (final f in ['name', 'code', 'phone', 'mobile', 'address', 'notes', 'credit_limit', 'balance', 'credit_notes'])
       f: TextEditingController()
   };
   List<Map<String, Object?>> customers = [];
@@ -74,6 +74,8 @@ class _CustomersScreenState extends State<CustomersScreen> {
         'phone': fields['phone']!.text.trim(),
         'mobile': fields['mobile']!.text.trim(),
         'address': fields['address']!.text.trim(),
+        'notes': fields['notes']!.text.trim(),
+        'credit_notes': fields['credit_notes']!.text.trim(),
         'credit_limit': limit,
         'is_active': active ? 1 : 0,
         'is_suspended': suspended ? 1 : 0,
@@ -207,21 +209,23 @@ class _CustomersScreenState extends State<CustomersScreen> {
                     Wrap(spacing: 12, runSpacing: 12, children: [
                       for (final entry in fields.entries)
                         SizedBox(
-                          width: entry.key == 'address' ? 500 : 240,
+                          width: ['address', 'notes', 'credit_notes'].contains(entry.key) ? 500 : 240,
                           child: TextField(
                             controller: entry.value,
                             readOnly: entry.key == 'balance' || !editing,
                             keyboardType: entry.key == 'credit_limit' || entry.key == 'balance'
                               ? const TextInputType.numberWithOptions(decimal: true)
                               : TextInputType.text,
-                            maxLines: entry.key == 'address' ? 2 : 1,
+                            maxLines: ['address', 'notes', 'credit_notes'].contains(entry.key) ? 2 : 1,
                             decoration: InputDecoration(labelText: switch (entry.key) {
                               'name' => 'اسم العميل *',
                               'code' => 'كود العميل',
                               'phone' => 'الهاتف',
                               'mobile' => 'الجوال',
                               'address' => 'العنوان',
+                              'notes' => 'ملاحظات',
                               'credit_limit' => 'حد الدين / الائتمان',
+                              'credit_notes' => 'ملاحظات ائتمانية',
                               'balance' => 'الرصيد الحالي (يُحدّث من الحركات)',
                               _ => entry.key,
                             }),
