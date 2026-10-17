@@ -110,10 +110,17 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
     return ListView(
       padding: const EdgeInsets.all(18),
       children: [
-        const Text(
-          'الإقفال اليومي',
-          style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-        ),
+        Row(children: [
+          const Expanded(child: Text(
+            'الإقفال اليومي',
+            style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+          )),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : _reload,
+            icon: const Icon(Icons.refresh),
+            label: const Text('تحديث سجل الإقفالات'),
+          ),
+        ]),
         const SizedBox(height: 8),
         const Text(
           'يمنع الإقفال وجود مستندات مبيعات أو مشتريات غير مرحلة في التاريخ المختار.',
@@ -148,6 +155,11 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
                   onPressed: _busy ? null : _closeDay,
                   icon: const Icon(Icons.lock_clock),
                   label: Text(_busy ? 'جارٍ الإقفال...' : 'إقفال اليوم'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : _reload,
+                  icon: const Icon(Icons.history),
+                  label: const Text('تحميل السجل'),
                 ),
               ],
             ),
