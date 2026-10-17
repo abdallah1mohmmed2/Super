@@ -17,7 +17,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   final notes = TextEditingController();
   final number = TextEditingController();
   final limit = TextEditingController(text: '500');
-  List<Map<String, Object?>> warehouses = [], products = [], documents = [], items = [], categories = [], users = [];
+  List<Map<String, Object?>> warehouses = [], products = [], documents = [], items = [], categories = [], users = [], barcodes = [];
   int? warehouseId, categoryId, documentId, selectedItemId;
   DateTime inventoryDate = DateTime.now();
   int selectedMonth = DateTime.now().month, selectedYear = DateTime.now().year;
@@ -50,11 +50,12 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       final w = await db.query('warehouses', where: 'is_active=1', orderBy: 'name');
       final p = await db.query('products', where: 'is_active=1', orderBy: 'name');
       final c = await db.query('categories', orderBy: 'name');
+      final b = await db.query('barcodes', orderBy: 'barcode');
       final d = await db.query('inventory_documents', where: 'inventory_type=?', whereArgs: [typeCode], orderBy: 'inventory_date DESC', limit: 300);
       final u = await db.query('users', orderBy: 'full_name');
       if (!mounted) return;
       setState(() {
-        warehouses = w; products = p; categories = c; documents = d; users = u;
+        warehouses = w; products = p; categories = c; documents = d; users = u; barcodes = b;
         warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt();
       });
     } catch (e) { msg('تعذر تحميل بيانات الجرد: $e'); }
@@ -131,7 +132,9 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     final filtered = products.where((p) {
       if (categoryId != null && (p['category_id'] as num?)?.toInt() != categoryId) return false;
       final q = search.text.trim().toLowerCase();
-      final matches = q.isEmpty || (p['name'] ?? '').toString().toLowerCase().contains(q) || (p['code'] ?? '').toString().toLowerCase().contains(q);
+      final productId = (p['id'] as num).toInt();
+      final barcodeMatch = barcodes.any((b) => (b['product_id'] as num?)?.toInt() == productId && (b['barcode'] ?? '').toString().toLowerCase().contains(q));
+      final matches = q.isEmpty || (p['name'] ?? '').toString().toLowerCase().contains(q) || (p['code'] ?? '').toString().toLowerCase().contains(q) || barcodeMatch;
       return matches && (includeZero || (qtyByProduct[(p['id'] as num).toInt()] ?? 0) != 0);
     }).take(maxRows.clamp(1, 5000)).toList();
     var added = 0;
@@ -153,7 +156,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
 
   Future<bool> _save() async {
     if (documentId == null) { msg('أنشئ مستندًا أولًا'); return false; }
-    if (status == 'مرحل') { msg('المستند مرحل ولا يمكن تعديله'); return false; }
+    if (status == 'مرحل' || status == 'ملغي') { msg('المستند المرحل أو الملغي لا يمكن تعديله'); return false; }
     setState(() => busy = true);
     try {
       await db.update('inventory_documents', {
@@ -204,6 +207,28 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       msg('تم ترحيل الجرد وتحديث أرصدة المخزون والقيود المحاسبية');
     } catch (e) { msg('تعذر ترحيل الجرد: $e'); }
     finally { if (mounted) setState(() => busy = false); }
+  }
+
+  Future<void> _cancelDocument() async {
+    if (documentId == null) { msg('حدد مستندًا أولًا'); return; }
+    if (status == 'مرحل' || status == 'ملغي') { msg('لا يمكن إلغاء مستند مرحل أو ملغي'); return; }
+    final yes = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إلغاء مستند الجرد'),
+        content: const Text('سيتم تغيير حالة المستند إلى ملغي ولن يمكن تعديله بعد ذلك.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد الإلغاء')),
+        ],
+      ),
+    );
+    if (yes != true || !mounted) return;
+    final changed = await db.update('inventory_documents', {'status': 'ملغي'}, where: 'id=? AND status IN (?,?)', whereArgs: [documentId, 'مسودة', 'معتمد']);
+    if (changed != 1) { msg('لم يتم الإلغاء؛ تحقق من حالة المستند'); await _loadDocuments(); return; }
+    setState(() => status = 'ملغي');
+    await _loadDocuments();
+    msg('تم إلغاء مستند الجرد');
   }
 
   Future<void> _removeSelected() async {
@@ -314,7 +339,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         ]);
       }).toList())))),
       Card(child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 10, runSpacing: 8, children: [
-        OutlinedButton.icon(onPressed: busy ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
+        OutlinedButton.icon(onPressed: busy || status == 'ملغي' || status == 'مرحل' ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
+        OutlinedButton.icon(onPressed: busy || status == 'ملغي' || status == 'مرحل' ? null : _cancelDocument, icon: const Icon(Icons.cancel_outlined), label: const Text('إلغاء')),
         OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
         FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
         OutlinedButton.icon(onPressed: busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
