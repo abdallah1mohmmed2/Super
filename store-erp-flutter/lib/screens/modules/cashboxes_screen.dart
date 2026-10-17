@@ -255,11 +255,31 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   }
 
   @override
+  Widget _summaryCard(String title, String value, IconData icon, Color color) => SizedBox(
+    width: 220,
+    child: Card(
+      child: ListTile(
+        leading: Icon(icon, color: color),
+        title: Text(title),
+        subtitle: Text(value, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+      ),
+    ),
+  );
+
   Widget build(BuildContext context) {
     final visibleBoxes = _boxes.where((box) => _filter.isEmpty || (box['name'] ?? '').toString().toLowerCase().contains(_filter.toLowerCase())).toList();
     final box = _selectedBox;
     final session = _activeSession;
     final expected = session == null ? null : (session['opening_balance'] as num?)?.toDouble();
+    final incoming = _transactions.fold<double>(0, (sum, row) {
+      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      return sum + (amount > 0 ? amount : 0);
+    });
+    final outgoing = _transactions.fold<double>(0, (sum, row) {
+      final amount = (row['amount'] as num?)?.toDouble() ?? 0;
+      return sum + (amount < 0 ? amount.abs() : 0);
+    });
+    final net = incoming - outgoing;
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
         const Expanded(child: Text('إدارة الصناديق وإقفال الجلسة', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
@@ -294,6 +314,13 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         ]),
       ]))),
       const SizedBox(height: 12),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        _summaryCard('الداخل', _money(incoming), Icons.south_west, Colors.green),
+        _summaryCard('الخارج', _money(outgoing), Icons.north_east, Colors.red),
+        _summaryCard('الصافي', _money(net), Icons.account_balance_wallet_outlined, net < 0 ? Colors.red : Colors.blue),
+        _summaryCard('عدد الحركات', _transactions.length.toString(), Icons.receipt_long_outlined, Colors.blueGrey),
+      ]),
+      const SizedBox(height: 8),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Row(children: [Expanded(child: Text('حركات الصندوق ${_transactions.length}', style: Theme.of(context).textTheme.titleMedium)), SizedBox(width: 260, child: TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث في الحركات'), onChanged: (v) => setState(() => _filter = v.trim()))) ]),
         const SizedBox(height: 8),
