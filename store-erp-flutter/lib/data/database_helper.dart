@@ -671,6 +671,7 @@ class DatabaseHelper {
       if (docs.isEmpty) throw StateError('مستند الجرد غير موجود');
       final h = docs.first;
       if (h['status'] == 'مرحل') throw StateError('مستند الجرد مرحل مسبقًا');
+      if (h['status'] != 'معتمد') throw StateError('يجب اعتماد مستند الجرد قبل الترحيل');
       final warehouseId = (h['warehouse_id'] as num?)?.toInt();
       if (warehouseId == null) throw StateError('حدد المخزن');
       final items = await txn.query('inventory_items', where:'document_id=?', whereArgs:[documentId]);
