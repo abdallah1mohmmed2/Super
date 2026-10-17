@@ -190,7 +190,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
         final category = categories.where((x) => x['id'] == row['category_id']);
         return [row['id'], row['code'], row['name'], row['english_name'], category.isEmpty ? '' : category.first['name'], row['unit'], row['sale_method'], row['cost_price'], row['sale_price'], row['stock_tracking'], row['negative_stock'], row['is_active'], row['notes']];
       }).toList();
-      await file.writeAsString('\\uFEFF' + const ListToCsvConverter().convert([header, ...data]), flush: true);
+      await file.writeAsString(String.fromCharCode(65279) + const ListToCsvConverter().convert([header, ...data]), flush: true);
       msg('تم تصدير الأصناف بصيغة CSV المتوافقة مع Excel: ' + file.path);
     } catch (e) { msg('تعذر تصدير الأصناف: ' + e.toString()); }
   }
