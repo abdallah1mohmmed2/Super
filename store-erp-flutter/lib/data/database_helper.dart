@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 11,
+        version: 12,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -123,6 +123,30 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE inventory_documents ADD COLUMN notes TEXT');
       }
     }
+    if (oldVersion < 12) {
+      final categoryColumns = await db.rawQuery('PRAGMA table_info(categories)');
+      if (!categoryColumns.any((column) => column['name'] == 'parent_id')) {
+        await db.execute('ALTER TABLE categories ADD COLUMN parent_id INTEGER REFERENCES categories(id)');
+      }
+      final productColumns = await db.rawQuery('PRAGMA table_info(products)');
+      final additions = <String, String>{
+        'subcategory_id': 'INTEGER REFERENCES categories(id)',
+        'item_type': "TEXT NOT NULL DEFAULT 'مخزني'",
+        'pricing_mode': "TEXT NOT NULL DEFAULT 'ثابت'",
+        'default_cash_box_id': 'INTEGER',
+        'expiry_tracking': 'INTEGER NOT NULL DEFAULT 0',
+        'batch_tracking': 'INTEGER NOT NULL DEFAULT 0',
+        'expiry_warning_days': 'INTEGER NOT NULL DEFAULT 30',
+        'is_returnable': 'INTEGER NOT NULL DEFAULT 1',
+        'visible_to_employee': 'INTEGER NOT NULL DEFAULT 1',
+        'requires_manager_approval': 'INTEGER NOT NULL DEFAULT 0',
+      };
+      for (final entry in additions.entries) {
+        if (!productColumns.any((column) => column['name'] == entry.key)) {
+          await db.execute('ALTER TABLE products ADD COLUMN ${entry.key} ${entry.value}');
+        }
+      }
+    }
     if (oldVersion < 11) {
       final columns = await db.rawQuery('PRAGMA table_info(customers)');
       if (!columns.any((column) => column['name'] == 'notes')) {
@@ -137,8 +161,8 @@ class DatabaseHelper {
   Future<void> _onCreate(Database db, int version) async {
     final statements = <String>[
       '''CREATE TABLE users(id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, full_name TEXT NOT NULL, password_hash TEXT NOT NULL, roles TEXT NOT NULL DEFAULT 'مدير نظام', is_active INTEGER NOT NULL DEFAULT 1, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''',
-      '''CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL)''',
-      '''CREATE TABLE products(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT NOT NULL, english_name TEXT, category_id INTEGER REFERENCES categories(id), unit TEXT DEFAULT 'قطعة', sale_method TEXT NOT NULL DEFAULT 'قطعة', cost_price REAL NOT NULL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, stock_tracking INTEGER DEFAULT 1, negative_stock INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, notes TEXT)''',
+      '''CREATE TABLE categories(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE NOT NULL, parent_id INTEGER REFERENCES categories(id))''',
+      '''CREATE TABLE products(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT UNIQUE, name TEXT NOT NULL, english_name TEXT, category_id INTEGER REFERENCES categories(id), subcategory_id INTEGER REFERENCES categories(id), unit TEXT DEFAULT 'قطعة', sale_method TEXT NOT NULL DEFAULT 'قطعة', item_type TEXT NOT NULL DEFAULT 'مخزني', pricing_mode TEXT NOT NULL DEFAULT 'ثابت', default_cash_box_id INTEGER, expiry_tracking INTEGER NOT NULL DEFAULT 0, batch_tracking INTEGER NOT NULL DEFAULT 0, expiry_warning_days INTEGER NOT NULL DEFAULT 30, is_returnable INTEGER NOT NULL DEFAULT 1, visible_to_employee INTEGER NOT NULL DEFAULT 1, requires_manager_approval INTEGER NOT NULL DEFAULT 0, cost_price REAL NOT NULL DEFAULT 0, sale_price REAL NOT NULL DEFAULT 0, stock_tracking INTEGER DEFAULT 1, negative_stock INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1, notes TEXT)''',
       '''CREATE TABLE product_units(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, unit_name TEXT NOT NULL, factor REAL NOT NULL DEFAULT 1, sale_price REAL DEFAULT 0)''',
       '''CREATE TABLE barcodes(id INTEGER PRIMARY KEY AUTOINCREMENT, product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE, unit_id INTEGER REFERENCES product_units(id) ON DELETE SET NULL, barcode TEXT UNIQUE NOT NULL)''',
       '''CREATE TABLE customers(id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, code TEXT, phone TEXT, mobile TEXT, address TEXT, credit_limit REAL DEFAULT 0, balance REAL DEFAULT 0, is_active INTEGER DEFAULT 1, is_suspended INTEGER DEFAULT 0, manager_approval INTEGER NOT NULL DEFAULT 0, notes TEXT, credit_notes TEXT)''',
