@@ -15,22 +15,22 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
   final db = DatabaseHelper.instance;
   final search = TextEditingController();
   final code = TextEditingController(), name = TextEditingController(), englishName = TextEditingController();
-  final unit = TextEditingController(text: 'قطعة'), cost = TextEditingController(text: '0'), price = TextEditingController(text: '0'), notes = TextEditingController();
+  final unit = TextEditingController(text: 'قطعة'), cost = TextEditingController(text: '0'), price = TextEditingController(text: '0'), notes = TextEditingController(), expiryWarningDays = TextEditingController(text: '30');
   late final TabController tabs;
-  List<Map<String,Object?>> products=[], categories=[], warehouses=[], units=[], barcodes=[], reorderLevels=[], batches=[], stock=[];
-  int? selectedId, categoryId;
-  String filter='', saleMethod='قطعة';
-  bool tracking=true, weighted=false, active=true, negativeStock=false, busy=false;
+  List<Map<String,Object?>> products=[], categories=[], warehouses=[], cashBoxes=[], units=[], barcodes=[], reorderLevels=[], batches=[], stock=[];
+  int? selectedId, categoryId, subcategoryId, defaultCashBoxId;
+  String filter='', saleMethod='قطعة', itemType='مخزني', pricingMode='ثابت';
+  bool tracking=true, weighted=false, active=true, negativeStock=false, expiryTracking=false, batchTracking=false, returnable=true, visibleToEmployee=true, requiresManagerApproval=false, busy=false;
 
   @override void initState(){super.initState(); tabs=TabController(length:5,vsync:this); reload();}
-  @override void dispose(){tabs.dispose();search.dispose();code.dispose();name.dispose();englishName.dispose();unit.dispose();cost.dispose();price.dispose();notes.dispose();super.dispose();}
+  @override void dispose(){tabs.dispose();search.dispose();code.dispose();name.dispose();englishName.dispose();unit.dispose();cost.dispose();price.dispose();notes.dispose();expiryWarningDays.dispose();super.dispose();}
   void msg(String value){if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(value)));}
 
   Future<void> reload() async {
     try {
-      final result=await Future.wait([db.query('products',orderBy:'name COLLATE NOCASE'),db.query('categories',orderBy:'name'),db.query('warehouses',orderBy:'name')]);
+      final result=await Future.wait([db.query('products',orderBy:'name COLLATE NOCASE'),db.query('categories',orderBy:'name'),db.query('warehouses',orderBy:'name'),db.query('cash_boxes',where:'is_active=1',orderBy:'name')]);
       if(!mounted)return;
-      setState(() { products=result[0]; categories=result[1]; warehouses=result[2]; });
+      setState(() { products=result[0]; categories=result[1]; warehouses=result[2]; cashBoxes=result[3]; });
       if(selectedId!=null) await loadChildren();
     } catch(e) {msg('تعذر تحميل الأصناف: $e');}
   }
@@ -50,7 +50,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
   }
   void clearForm(){
     setState((){
-      selectedId=null;categoryId=null;saleMethod='قطعة';tracking=true;weighted=false;active=true;negativeStock=false;
+      selectedId=null;categoryId=null;subcategoryId=null;defaultCashBoxId=null;saleMethod='قطعة';itemType='مخزني';pricingMode='ثابت';tracking=true;weighted=false;active=true;negativeStock=false;expiryTracking=false;batchTracking=false;returnable=true;visibleToEmployee=true;requiresManagerApproval=false;expiryWarningDays.text='30';
       code.clear();name.clear();englishName.clear();unit.text='قطعة';cost.text='0';price.text='0';notes.clear();
       units=[];barcodes=[];reorderLevels=[];batches=[];stock=[];
     });
@@ -61,6 +61,11 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
       selectedId=(p['id'] as num).toInt();code.text=(p['code']??'').toString();name.text=(p['name']??'').toString();
       englishName.text=(p['english_name']??'').toString();categoryId=(p['category_id'] as num?)?.toInt();
       unit.text=(p['unit']??'قطعة').toString();saleMethod=(p['sale_method']??'قطعة').toString();
+      subcategoryId=(p['subcategory_id'] as num?)?.toInt(); defaultCashBoxId=(p['default_cash_box_id'] as num?)?.toInt();
+      itemType=(p['item_type']??'مخزني').toString(); pricingMode=(p['pricing_mode']??'ثابت').toString();
+      expiryTracking=((p['expiry_tracking'] as num?)?.toInt()??0)==1; batchTracking=((p['batch_tracking'] as num?)?.toInt()??0)==1;
+      returnable=((p['is_returnable'] as num?)?.toInt()??1)==1; visibleToEmployee=((p['visible_to_employee'] as num?)?.toInt()??1)==1; requiresManagerApproval=((p['requires_manager_approval'] as num?)?.toInt()??0)==1;
+      expiryWarningDays.text=((p['expiry_warning_days'] as num?)?.toInt()??30).toString();
       cost.text=((p['cost_price'] as num?)??0).toString();price.text=((p['sale_price'] as num?)??0).toString();notes.text=(p['notes']??'').toString();
       tracking=((p['stock_tracking'] as num?)?.toInt()??1)==1;negativeStock=((p['negative_stock'] as num?)?.toInt()??0)==1;
       active=((p['is_active'] as num?)?.toInt()??1)==1;weighted=saleMethod=='وزن';
@@ -75,7 +80,10 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     try{
       final values=<String,Object?>{
         'code':code.text.trim().isEmpty?null:code.text.trim(),'name':name.text.trim(),'english_name':englishName.text.trim(),
-        'category_id':categoryId,'unit':unit.text.trim().isEmpty?'قطعة':unit.text.trim(),'sale_method':weighted?'وزن':saleMethod,
+        'category_id':categoryId,'subcategory_id':subcategoryId,'unit':unit.text.trim().isEmpty?'قطعة':unit.text.trim(),'sale_method':weighted?'وزن':saleMethod,
+        'item_type':itemType,'pricing_mode':pricingMode,'default_cash_box_id':defaultCashBoxId,
+        'expiry_tracking':expiryTracking?1:0,'batch_tracking':batchTracking?1:0,'expiry_warning_days':int.tryParse(expiryWarningDays.text.trim())??30,
+        'is_returnable':returnable?1:0,'visible_to_employee':visibleToEmployee?1:0,'requires_manager_approval':requiresManagerApproval?1:0,
         'cost_price':c,'sale_price':p,'notes':notes.text.trim(),'stock_tracking':tracking?1:0,
         'negative_stock':negativeStock?1:0,'is_active':active?1:0,
       };
@@ -185,10 +193,12 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
       final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
       await folder.create(recursive: true);
       final file = File(p.join(folder.path, 'products_' + DateTime.now().millisecondsSinceEpoch.toString() + '.csv'));
-      final header = ['المعرف', 'الكود', 'اسم الصنف', 'الاسم الإنجليزي', 'التصنيف', 'الوحدة', 'طريقة البيع', 'سعر التكلفة', 'سعر البيع', 'تتبع المخزون', 'السماح بالسالب', 'نشط', 'ملاحظات'];
+      final header = ['المعرف', 'الكود', 'اسم الصنف', 'الاسم الإنجليزي', 'التصنيف', 'التصنيف الفرعي', 'الوحدة', 'نوع الصنف', 'نمط التسعير', 'طريقة البيع', 'الصندوق الافتراضي', 'سعر التكلفة', 'سعر البيع', 'تتبع المخزون', 'تتبع الصلاحية', 'تتبع الدفعات', 'تنبيه الانتهاء بالأيام', 'السماح بالسالب', 'قابل للإرجاع', 'ظاهر للموظف', 'يتطلب موافقة مدير', 'نشط', 'ملاحظات'];
       final data = visible.map((row) {
         final category = categories.where((x) => x['id'] == row['category_id']);
-        return [row['id'], row['code'], row['name'], row['english_name'], category.isEmpty ? '' : category.first['name'], row['unit'], row['sale_method'], row['cost_price'], row['sale_price'], row['stock_tracking'], row['negative_stock'], row['is_active'], row['notes']];
+        final sub = categories.where((x) => x['id'] == row['subcategory_id']);
+        final box = cashBoxes.where((x) => x['id'] == row['default_cash_box_id']);
+        return [row['id'], row['code'], row['name'], row['english_name'], category.isEmpty ? '' : category.first['name'], sub.isEmpty ? '' : sub.first['name'], row['unit'], row['item_type'], row['pricing_mode'], row['sale_method'], box.isEmpty ? '' : box.first['name'], row['cost_price'], row['sale_price'], row['stock_tracking'], row['expiry_tracking'], row['batch_tracking'], row['expiry_warning_days'], row['negative_stock'], row['is_returnable'], row['visible_to_employee'], row['requires_manager_approval'], row['is_active'], row['notes']];
       }).toList();
       await file.writeAsString(String.fromCharCode(65279) + const ListToCsvConverter().convert([header, ...data]), flush: true);
       msg('تم تصدير الأصناف بصيغة CSV المتوافقة مع Excel: ' + file.path);
