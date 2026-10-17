@@ -64,7 +64,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       final selected = _boxId ?? (boxes.isEmpty ? null : (boxes.first['id'] as num).toInt());
       final transactions = selected == null
           ? <Map<String, Object?>>[]
-          : await _db.query('cash_box_transactions', where: 'cash_box_id=?', whereArgs: [selected], orderBy: 'transaction_date DESC', limit: 300);
+          : await _db.query('cash_box_transactions', where: 'cash_box_id=?', whereArgs: [selected], orderBy: 'transaction_date DESC');
       if (!mounted) return;
       setState(() {
         _boxes = boxes;
@@ -322,7 +322,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       ]),
       const SizedBox(height: 8),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Expanded(child: Text('حركات الصندوق ${_transactions.length}', style: Theme.of(context).textTheme.titleMedium)), SizedBox(width: 260, child: TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث في الحركات'), onChanged: (v) => setState(() => _filter = v.trim()))) ]),
+        Row(children: [Expanded(child: Text('حركات الصندوق ${_transactions.length}', style: Theme.of(context).textTheme.titleMedium)), SizedBox(width: 260, child: TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث في الحركات'), onChanged: (v) => setState(() => _filter = v.trim()))), const SizedBox(width: 8), OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.download), label: const Text('تحميل الحركات'))]),
         const SizedBox(height: 8),
         if (_transactions.isEmpty) const Text('لا توجد حركات مسجلة لهذا الصندوق.')
         else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(columns: const [
