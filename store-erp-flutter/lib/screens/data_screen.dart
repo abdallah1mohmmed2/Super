@@ -927,6 +927,494 @@ class _DataScreenState extends State<DataScreen> {
     } catch (e) { _message('تعذر التصدير: $e'); }
   }
 
+  Future<void> _runDailyBackupIfDue() async {
+    if (!mounted || _busy || !_dailyBackupEnabled) return;
+    final match = RegExp(r'^(\\d{2}):(\\d{2})
+    final docs = await getApplicationDocumentsDirectory();
+    final defaultFolder = p.join(docs.path, 'StoreERP', 'backups');
+    final settings = await DatabaseHelper.instance.query('app_settings');
+    final values = <String,String>{
+      for (final row in settings) (row['key'] ?? '').toString(): (row['value'] ?? '').toString(),
+    };
+    if (!mounted) return;
+    setState(() {
+      _backupFolderController.text = values['backup_folder'] ?? defaultFolder;
+      _backupNameController.text = values['backup_file_name'] ?? 'store_backup';
+      _verifyBackup = values['backup_verify'] != 'false';
+      _safetyCopyBeforeRestore = values['backup_safety_copy'] != 'false';
+      _dailyBackupEnabled = values['backup_daily_enabled'] == 'true';
+      _backupTimeController.text = values['backup_daily_time'] ?? '22:00';
+    });
+  }
+
+  Future<void> _saveBackupSettings() async {
+    final folder = _backupFolderController.text.trim();
+    if (folder.isEmpty) { _message('حدد مجلد حفظ النسخ'); return; }
+    final values = <String,String>{
+      'backup_folder': folder,
+      'backup_file_name': _backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim(),
+      'backup_verify': '$_verifyBackup',
+      'backup_safety_copy': '$_safetyCopyBeforeRestore',
+      'backup_daily_enabled': '$_dailyBackupEnabled',
+      'backup_daily_time': _backupTimeController.text.trim(),
+    };
+    for (final entry in values.entries) {
+      final found = await DatabaseHelper.instance.query('app_settings', where: 'key=?', whereArgs: [entry.key], limit: 1);
+      if (found.isEmpty) {
+        await DatabaseHelper.instance.insert('app_settings', {'key': entry.key, 'value': entry.value});
+      } else {
+        await DatabaseHelper.instance.update('app_settings', {'value': entry.value}, where: 'key=?', whereArgs: [entry.key]);
+      }
+    }
+    _message('تم حفظ إعدادات النسخ');
+  }
+
+  Future<void> _editBackupPath({required bool restore}) async {
+    final controller = TextEditingController(text: restore ? _restorePathController.text : _backupFolderController.text);
+    final value = await showDialog<String>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(restore ? 'تحديد ملف النسخة' : 'تحديد مجلد حفظ النسخ'),
+      content: SizedBox(width: 520, child: TextField(controller: controller, decoration: InputDecoration(labelText: restore ? 'مسار ملف .db' : 'مسار المجلد'))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, controller.text.trim()), child: const Text('استخدام المسار')),
+      ],
+    ));
+    controller.dispose();
+    if (value == null || value.isEmpty || !mounted) return;
+    setState(() {
+      if (restore) { _restorePathController.text = value; } else { _backupFolderController.text = value; }
+    });
+  }
+
+  Future<void> _backup() async {
+    setState(() => _busy = true);
+    String? createdPath;
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folderPath = _backupFolderController.text.trim().isEmpty
+          ? p.join(docs.path, 'StoreERP', 'backups')
+          : _backupFolderController.text.trim();
+      final folder = Directory(folderPath);
+      await folder.create(recursive: true);
+      await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final source = await DatabaseHelper.instance.databasePath;
+      final stem = (_backupNameController.text.trim().isEmpty ? 'store_backup' : _backupNameController.text.trim())
+          .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+      createdPath = p.join(folder.path, '${stem}_${DateTime.now().toIso8601String().replaceAll(':','-')}.db');
+      await File(source).copy(createdPath);
+      var status = 'نجاح — دون تحقق';
+      if (_verifyBackup) {
+        final file = File(createdPath);
+        final handle = await file.open();
+        final header = await handle.read(16);
+        await handle.close();
+        if (header.length != 16 || ascii.decode(header.take(15), allowInvalid: true) != 'SQLite format 3' || header[15] != 0) {
+          throw StateError('فشل التحقق من ملف النسخة');
+        }
+        status = 'نجاح — تم التحقق من ترويسة SQLite';
+      }
+      if (!mounted) return;
+      await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': status});
+      _lastBackupSucceeded = true;
+      _message('تم إنشاء النسخة الاحتياطية: $createdPath');
+    } catch (e) {
+      if (createdPath != null) {
+        try { await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': 'فشل: $e'}); } catch (_) {}
+      }
+      _lastBackupSucceeded = false;
+      _message('فشل إنشاء النسخة الاحتياطية: $e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _restoreBackup() async {
+    final controller = TextEditingController(text: _restorePathController.text);
+    final path = await showDialog<String>(context:context, builder:(ctx)=>AlertDialog(
+      title:const Text('استعادة نسخة احتياطية'),
+      content:SizedBox(width:500, child:TextField(controller:controller, decoration:const InputDecoration(labelText:'المسار الكامل لملف .db', hintText:r'C:\Users\User\Documents\StoreERP\backups\store.db'))),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,controller.text.trim()),child:const Text('متابعة'))]
+    ));
+    
+    if (path == null || path.isEmpty || !mounted) { controller.dispose(); return; }
+    
+    final confirmed = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(
+      title:const Text('تأكيد الاستعادة'),
+      content:const Text('سيتم استبدال قاعدة البيانات الحالية بالنسخة المحددة. أنشئ نسخة احتياطية حالية قبل المتابعة. هل تريد الاستمرار؟'),
+      actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('استعادة واستبدال'))]
+    ));
+    
+    if (confirmed != true || !mounted) { controller.dispose(); return; }
+    _restorePathController.text = path;
+    setState(()=>_busy=true);
+    
+    try {
+      final source=File(path);
+      if (!await source.exists()) throw StateError('الملف غير موجود');
+      if (await source.length() < 100) throw StateError('ملف النسخة صغير أو غير صالح');
+      final raf=await source.open(); final header=await raf.read(16); await raf.close();
+      if (ascii.decode(header,allowInvalid:true) != 'SQLite format 3\u0000') throw StateError('الملف المحدد ليس قاعدة SQLite صالحة');
+      final target=await DatabaseHelper.instance.databasePath;
+      await (await DatabaseHelper.instance.database).rawQuery('PRAGMA wal_checkpoint(FULL)');
+      final docs=await getApplicationDocumentsDirectory();
+      final safetyDir=Directory(_backupFolderController.text.trim().isEmpty ? p.join(docs.path,'StoreERP','backups') : _backupFolderController.text.trim());
+      await safetyDir.create(recursive:true);
+      if (_safetyCopyBeforeRestore) await File(target).copy(p.join(safetyDir.path,'pre_restore_${DateTime.now().millisecondsSinceEpoch}.db'));
+      await DatabaseHelper.instance.close();
+      for (final suffix in ['-wal','-shm']) { final sidecar=File('$target$suffix'); if(await sidecar.exists()) await sidecar.delete(); }
+      await source.copy(target);
+      await DatabaseHelper.instance.database;
+      
+      if (!mounted) return; 
+      await context.read<AppProvider>().refresh();
+      _message('تمت استعادة النسخة بنجاح. يوصى بتسجيل الخروج ثم الدخول مجددًا.');
+    } catch(e) { 
+      _message('تعذرت الاستعادة: $e'); 
+    } finally {
+      controller.dispose(); 
+      if(mounted) setState(()=>_busy=false);
+    }
+  }
+
+  String _displayValue(String field, Object? value) {
+    if (value == null) return '—';
+    if (field == 'is_active') {
+      return (value as num?)?.toInt() == 1 ? 'نشط' : 'غير نشط';
+    }
+    final reference = _referenceFields[field];
+    final id = (value as num?)?.toInt() ?? int.tryParse(value.toString());
+    if (reference != null && id != null) {
+      final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+      for (final option in options) {
+        if ((option['id'] as num?)?.toInt() == id) {
+          return '${option[reference.$2] ?? value} (#$id)';
+        }
+      }
+    }
+    return value.toString();
+  }
+
+  Future<List<Map<String, Object?>>> _loadRows() async {
+    final rows = await context.read<AppProvider>().load(config.table);
+    final expectedType = switch (widget.screenKey) {
+      'counts' => 'فعلي',
+      'dailycount' => 'يومي',
+      'monthlycount' => 'شهري',
+      'yearlycount' => 'سنوي',
+      _ => null,
+    };
+    if (expectedType == null) return rows;
+    final documents = await DatabaseHelper.instance.query('inventory_documents');
+    final matchingIds = documents
+        .where((row) => (row['inventory_type'] ?? '').toString().contains(expectedType))
+        .map((row) => row['id'])
+        .toSet();
+    return rows.where((row) => matchingIds.contains(row['document_id'])).toList();
+  }
+
+  @override 
+  Widget build(BuildContext context) {
+    return FutureBuilder<List<Map<String,Object?>>>(
+      future: _loadRows(),
+      builder: (context, snapshot) {
+        final all = snapshot.data ?? <Map<String,Object?>>[];
+        final rows = all.where((row) => _filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(_filter.toLowerCase()))).toList();
+        
+        return ListView(padding: const EdgeInsets.all(18), children: [
+          SectionCard(
+            title: config.title, 
+            trailing: Wrap(spacing: 8, children: [
+              if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
+              if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
+              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
+              if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
+              if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
+              if (widget.screenKey == 'users' && _selectedId != null) ActionButton('إعادة تعيين كلمة المرور', icon: Icons.password, onPressed: _resetUserPassword),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('طباعة / معاينة', icon: Icons.print_outlined, onPressed: _printSelected),
+              if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
+              if (widget.screenKey == 'returns' && _selectedId != null) ActionButton('استدعاء الفاتورة الأصلية', icon: Icons.receipt_long_outlined, onPressed: _loadOriginalInvoice),
+              if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
+            ]), 
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start, 
+              children: [
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') Padding(padding: const EdgeInsets.only(bottom: 12), child: Text('الكاشير: ${context.watch<AppProvider>().currentUser}  •  الصندوق المحدد هو جلسة التحصيل الحالية', style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.blueGrey))),
+                if (widget.screenKey == 'sales' || widget.screenKey == 'purchases') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('احفظ رأس الفاتورة ثم حدده، وأضف البنود من زر «إضافة بند». تظل الفاتورة مسودة حتى تنفيذ الترحيل والتحقق من المخزون والحسابات.', style: TextStyle(color: Colors.deepOrange))),
+                if (widget.screenKey == 'returns') const Padding(padding: EdgeInsets.only(bottom: 12), child: Text('أدخل معرف فاتورة البيع الأصلية، ثم احفظ رأس المرتجع وأضف الأصناف المرتجعة من زر «إضافة بند».', style: TextStyle(color: Colors.deepOrange))),
+                if (_readOnly) Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(widget.screenKey == 'backup' ? 'استخدم أزرار النسخ والاستعادة؛ لا تعدّل سجل النسخ يدويًا.' : widget.screenKey == 'inventory' ? 'هذه الشاشة للعرض فقط. تُحدّث الأرصدة من خلال المستندات المرحلة.' : widget.screenKey == 'counts' ? 'أدخل الكميات الفعلية من خلال مستند الجرد في شاشة متابعة مستندات الجرد، ثم رحّل المستند لتسوية الأرصدة.' : 'عرض فقط: هذه البيانات مرجعية ولا تعدّل من هذه الشاشة.', style: const TextStyle(color: Colors.blueGrey))),
+                if (!_readOnly) Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: config.fields
+                      .map((field) => _fieldInput(
+                            field,
+                            MediaQuery.sizeOf(context).width > 1050
+                                ? 240
+                                : MediaQuery.sizeOf(context).width * .72,
+                          ))
+                      .toList(),
+                ),
+                if (_selectedId != null) Padding(padding: const EdgeInsets.only(top: 12), child: Text('وضع التعديل — السجل رقم $_selectedId', style: const TextStyle(color: Colors.blue, fontWeight: FontWeight.bold))),
+              ]
+            )
+          ),
+          
+          if (widget.screenKey == 'backup') ...[
+            const SizedBox(height: 12),
+            SectionCard(
+              title: 'إعدادات النسخ الاحتياطي والاسترجاع',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text('قاعدة البيانات محلية بصيغة SQLite؛ النسخ اليومي لا يعمل عندما يكون التطبيق مغلقًا.'),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 12,
+                    runSpacing: 12,
+                    children: [
+                      SizedBox(width: 420, child: TextField(controller: _backupFolderController, decoration: const InputDecoration(labelText: 'مجلد الحفظ الافتراضي'))),
+                      ActionButton('استعراض المجلد', icon: Icons.folder_open, onPressed: () => _editBackupPath(restore: false)),
+                      SizedBox(width: 280, child: TextField(controller: _backupNameController, decoration: const InputDecoration(labelText: 'اسم ملف النسخة'))),
+                      ActionButton('حفظ الإعدادات', icon: Icons.save_outlined, onPressed: _saveBackupSettings),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    value: _verifyBackup,
+                    onChanged: (value) => setState(() => _verifyBackup = value ?? true),
+                    title: const Text('التحقق من ملف النسخة بعد الإنشاء'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  CheckboxListTile(
+                    value: _safetyCopyBeforeRestore,
+                    onChanged: (value) => setState(() => _safetyCopyBeforeRestore = value ?? true),
+                    title: const Text('إنشاء نسخة أمان قبل الاسترجاع'),
+                    controlAffinity: ListTileControlAffinity.leading,
+                    contentPadding: EdgeInsets.zero,
+                  ),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      ActionButton('اختيار ملف الاسترجاع', icon: Icons.folder_open, onPressed: () => _editBackupPath(restore: true)),
+                      ActionButton('بدء الاسترجاع', icon: Icons.settings_backup_restore, onPressed: _restoreBackup),
+                    ],
+                  ),
+                  if (_restorePathController.text.isNotEmpty)
+                    Padding(padding: const EdgeInsets.only(top: 8), child: SelectableText('ملف الاسترجاع المحدد: ${_restorePathController.text}')),
+                ],
+              ),
+            ),
+          ],
+          if (_selectedId != null && _lineTable != null) ...[
+            const SizedBox(height: 12),
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query(_lineTable!,where:'$_lineParent=?',whereArgs:[_selectedId],orderBy:'id'),
+              builder: (context, lineSnapshot) {
+                final lineRows=lineSnapshot.data??<Map<String,Object?>>[];
+                final keys=lineRows.isEmpty?const <String>['id','product_id','qty']:lineRows.first.keys.where((k)=>!['sales_id','purchase_id','return_id','transfer_id','document_id'].contains(k)).toList();
+                return SectionCard(
+                  title: 'بنود المستند رقم $_selectedId (${lineRows.length})',
+                  trailing: TextButton.icon(
+                    onPressed: _addLine,
+                    icon: const Icon(Icons.add),
+                    label: const Text('إضافة بند'),
+                  ),
+                  child: lineSnapshot.hasError
+                      ? Text('تعذر تحميل البنود: ${lineSnapshot.error}')
+                      : lineRows.isEmpty
+                          ? const Text('لا توجد بنود لهذا المستند بعد')
+                          : SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: [
+                                  ...keys.map((k) => DataColumn(label: Text(fieldLabel(k)))),
+                                  const DataColumn(label: Text('إجراء')),
+                                ],
+                                rows: lineRows.map((r) {
+                                  return DataRow(
+                                    cells: [
+                                      ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
+                                      DataCell(
+                                        IconButton(
+                                          tooltip: 'حذف البند',
+                                          onPressed: () => _deleteLine(r),
+                                          icon: const Icon(Icons.delete_outline, color: Colors.red),
+                                        ),
+                                      ),
+                                    ],
+                                  );
+                                }).toList(),
+                              ),
+                            ),
+                );
+              }
+            ),
+          ],
+          
+          if (_selectedId != null && ['sales','purchases'].contains(widget.screenKey)) ...[
+            const SizedBox(height: 12),
+            Builder(builder: (context) {
+              final selectedRows = all.where((row) => row['id'] == _selectedId).toList();
+              final h = selectedRows.isEmpty ? <String,Object?>{} : selectedRows.first;
+              final subtotal = (h['subtotal'] as num?)?.toDouble() ?? 0;
+              final discount = (h['discount'] as num?)?.toDouble() ?? 0;
+              final tax = (h['tax'] as num?)?.toDouble() ?? 0;
+              final net = (h['net'] as num?)?.toDouble() ?? 0;
+              final paid = (h['paid'] as num?)?.toDouble() ?? 0;
+              final remaining = (net - paid).clamp(0, double.infinity).toDouble();
+              Widget metric(String label, double value) => Container(padding: const EdgeInsets.all(12), constraints: const BoxConstraints(minWidth: 130), decoration: BoxDecoration(color: Theme.of(context).colorScheme.surfaceContainerHighest, borderRadius: BorderRadius.circular(12)), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Text(label, style: Theme.of(context).textTheme.labelMedium), const SizedBox(height: 4), Text(value.toStringAsFixed(2), style: Theme.of(context).textTheme.titleMedium)]));
+              return SectionCard(title: 'الملخص المالي', child: Wrap(spacing: 10, runSpacing: 10, children: [metric('الإجمالي', subtotal), metric('الخصم', discount), metric('الضريبة', tax), metric('الصافي', net), metric('المدفوع', paid), metric('المتبقي', remaining)]));
+            }),
+          ],
+          
+          if (_selectedId != null && ['sales','purchases','returns'].contains(widget.screenKey)) ...[
+            const SizedBox(height: 12),
+            FutureBuilder<List<Map<String,Object?>>>(
+              future: DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId], orderBy: 'id DESC'),
+              builder: (context, paymentSnapshot) {
+                final paymentRows = paymentSnapshot.data ?? <Map<String,Object?>>[];
+                final totalPaid = paymentRows.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
+                final headerRows = all.where((row) => row['id'] == _selectedId).toList();
+                final header = headerRows.isEmpty ? <String,Object?>{} : headerRows.first;
+                final total = ((header['net'] ?? header['total']) as num?)?.toDouble() ?? 0;
+                return SectionCard(
+                  title: widget.screenKey == 'returns' ? 'تسوية المرتجع' : 'دفعات المستند',
+                  trailing: Text('إجمالي الدفعات: ${totalPaid.toStringAsFixed(2)}'),
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    if (widget.screenKey != 'returns') Text('الصافي: ${total.toStringAsFixed(2)}   |   المتبقي: ${(total-totalPaid).clamp(0,double.infinity).toStringAsFixed(2)}'),
+                    if (paymentSnapshot.hasError) Text('تعذر تحميل الدفعات: ${paymentSnapshot.error}')
+                    else if (paymentRows.isEmpty) const Padding(padding: EdgeInsets.all(12), child: Text('لا توجد دفعات مسجلة لهذا المستند.'))
+                    else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(
+                      columns: const [DataColumn(label: Text('التاريخ')), DataColumn(label: Text('الطريقة')), DataColumn(label: Text('المبلغ')), DataColumn(label: Text('المرجع')), DataColumn(label: Text('ملاحظات')), DataColumn(label: Text('إجراء'))],
+                      rows: paymentRows.map((row) => DataRow(cells: [
+                        DataCell(Text((row['payment_date'] ?? '—').toString())),
+                        DataCell(Text((row['method'] ?? 'نقدي').toString())),
+                        DataCell(Text(((row['amount'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                        DataCell(Text((row['reference'] ?? '—').toString())),
+                        DataCell(Text((row['notes'] ?? '—').toString())),
+                        DataCell(IconButton(tooltip: 'حذف الدفعة', onPressed: () => _deletePayment(row), icon: const Icon(Icons.delete_outline, color: Colors.red))),
+                      ])).toList(),
+                    )),
+                    Align(alignment: Alignment.centerRight, child: FilledButton.tonalIcon(onPressed: _addPayment, icon: const Icon(Icons.add_card), label: const Text('إضافة دفعة / تسوية'))),
+                  ]),
+                );
+              },
+            ),
+          ],
+          
+          const SizedBox(height: 16),
+          
+          // تم ترتيب هذا الجزء بالكامل لحل مشكلة الأقواس المتداخلة (])))),)
+          SectionCard(
+            title: 'السجلات والبحث (${rows.length})', 
+            trailing: Wrap(
+              spacing: 8, 
+              children: [
+                ActionButton('تصدير CSV', icon: Icons.file_download_outlined, onPressed: () => _export(rows)), 
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: () => setState(() {}))
+              ]
+            ), 
+            child: Column(
+              children: [
+                TextField(
+                  controller: _search, 
+                  decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'ابحث في جميع حقول السجلات...'), 
+                  onChanged: (v) => setState(() => _filter = v.trim())
+                ),
+                const SizedBox(height: 12),
+                
+                if (_busy || snapshot.connectionState == ConnectionState.waiting) 
+                  const LinearProgressIndicator(),
+                  
+                if (snapshot.hasError) 
+                  Padding(padding: const EdgeInsets.all(16), child: Text('تعذر تحميل البيانات: ${snapshot.error}'))
+                else if (rows.isEmpty) 
+                  const Padding(padding: EdgeInsets.all(24), child: Text('لا توجد سجلات مطابقة'))
+                else 
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal, 
+                    child: DataTable(
+                      columns: [
+                        ...config.columns.map((field) => DataColumn(label: Text(fieldLabel(field)))), 
+                        const DataColumn(label: Text('إجراءات'))
+                      ], 
+                      rows: rows.map((row) => DataRow(
+                        selected: row['id'] == _selectedId, 
+                        onSelectChanged: (_) => _select(row), 
+                        cells: [
+                          ...config.columns.map((field) => DataCell(
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 220), 
+                              child: Text(_displayValue(field, row[field]), overflow: TextOverflow.ellipsis)
+                            )
+                          )), 
+                          DataCell(
+                            Row(
+                              mainAxisSize: MainAxisSize.min, 
+                              children: [
+                                IconButton(tooltip: _readOnly ? 'عرض' : 'تعديل', onPressed: () => _select(row), icon: Icon(_readOnly ? Icons.visibility_outlined : Icons.edit_outlined, color: Colors.blue)), 
+                                if (!_readOnly) 
+                                  IconButton(tooltip: 'حذف', onPressed: () => _delete(row), icon: const Icon(Icons.delete_outline, color: Colors.red))
+                              ]
+                            )
+                          )
+                        ]
+                      )).toList()
+                    )
+                  ) // نهاية SingleChildScrollView
+              ]
+            ) // نهاية Column
+          ), // نهاية SectionCard
+        ]); // نهاية ListView
+      }, // نهاية builder
+    ); // نهاية FutureBuilder
+  }
+  
+  IconData _icon(String field) { if (field.contains('name')) return Icons.badge_outlined; if (field.contains('price') || field == 'net' || field == 'balance' || field == 'amount') return Icons.payments_outlined; if (field.contains('date')) return Icons.calendar_month_outlined; if (field.contains('phone') || field == 'mobile') return Icons.phone_outlined; if (field.contains('qty')) return Icons.inventory_2_outlined; return Icons.edit_note; }
+}
+).firstMatch(_backupTimeController.text.trim());
+    if (match == null) return;
+    final hour = int.tryParse(match.group(1) ?? '');
+    final minute = int.tryParse(match.group(2) ?? '');
+    if (hour == null || minute == null || hour > 23 || minute > 59) return;
+    final now = DateTime.now();
+    if (now.hour < hour || (now.hour == hour && now.minute < minute)) return;
+    final today = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final rows = await DatabaseHelper.instance.query(
+      'app_settings',
+      where: 'key=?',
+      whereArgs: ['backup_last_run_date'],
+      limit: 1,
+    );
+    if (rows.isNotEmpty && rows.first['value'] == today) return;
+    _lastBackupSucceeded = false;
+    await _backup();
+    if (!_lastBackupSucceeded || !mounted) return;
+    final existing = await DatabaseHelper.instance.query(
+      'app_settings',
+      where: 'key=?',
+      whereArgs: ['backup_last_run_date'],
+      limit: 1,
+    );
+    if (existing.isEmpty) {
+      await DatabaseHelper.instance.insert('app_settings', {
+        'key': 'backup_last_run_date',
+        'value': today,
+      });
+    } else {
+      await DatabaseHelper.instance.update(
+        'app_settings',
+        {'value': today},
+        where: 'key=?',
+        whereArgs: ['backup_last_run_date'],
+      );
+    }
+  }
+
   Future<void> _loadBackupSettings() async {
     final docs = await getApplicationDocumentsDirectory();
     final defaultFolder = p.join(docs.path, 'StoreERP', 'backups');
