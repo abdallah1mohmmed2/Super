@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 9,
+        version: 10,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -31,7 +31,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 9, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 10, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -117,6 +117,12 @@ class DatabaseHelper {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_status ON approval_requests(status, request_date)');
       await db.execute('CREATE INDEX IF NOT EXISTS idx_approval_requests_entity ON approval_requests(entity_type, entity_id)');
     }
+    if (oldVersion < 10) {
+      final columns = await db.rawQuery('PRAGMA table_info(inventory_documents)');
+      if (!columns.any((column) => column['name'] == 'notes')) {
+        await db.execute('ALTER TABLE inventory_documents ADD COLUMN notes TEXT');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -143,7 +149,7 @@ class DatabaseHelper {
       '''CREATE TABLE damage_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES damage_documents(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, estimated_cost REAL DEFAULT 0, batch_no TEXT)''',
       '''CREATE TABLE cash_box_transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, cash_box_id INTEGER NOT NULL REFERENCES cash_boxes(id), transaction_date TEXT DEFAULT CURRENT_TIMESTAMP, type TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, notes TEXT)''',
       '''CREATE TABLE cash_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, from_cashbox_id INTEGER REFERENCES cash_boxes(id), to_cashbox_id INTEGER REFERENCES cash_boxes(id), amount REAL NOT NULL, reason TEXT, status TEXT DEFAULT 'مسودة', transfer_date TEXT DEFAULT CURRENT_TIMESTAMP)''',
-      '''CREATE TABLE inventory_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, inventory_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), inventory_type TEXT, status TEXT DEFAULT 'مسودة', created_by INTEGER REFERENCES users(id), approved_by INTEGER REFERENCES users(id), posted_by INTEGER REFERENCES users(id))''',
+      '''CREATE TABLE inventory_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, inventory_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), inventory_type TEXT, status TEXT DEFAULT 'مسودة', notes TEXT, created_by INTEGER REFERENCES users(id), approved_by INTEGER REFERENCES users(id), posted_by INTEGER REFERENCES users(id))''',
       '''CREATE TABLE inventory_items(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES inventory_documents(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), book_qty REAL DEFAULT 0, count_qty REAL DEFAULT 0, count_qty2 REAL DEFAULT 0, difference REAL DEFAULT 0, difference_cost REAL DEFAULT 0)''',
       '''CREATE TABLE app_settings(key TEXT PRIMARY KEY, value TEXT)''',
       '''CREATE TABLE document_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type TEXT NOT NULL, document_id INTEGER NOT NULL, payment_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, method TEXT NOT NULL DEFAULT 'نقدي', amount REAL NOT NULL CHECK(amount > 0), reference TEXT, notes TEXT)''',
