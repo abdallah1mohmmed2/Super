@@ -160,7 +160,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
         SizedBox(width: 240, child: TextField(controller: _cause, decoration: const InputDecoration(labelText: 'سبب التلف/الانتهاء', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: _newDoc, icon: const Icon(Icons.add), label: const Text('جديد')),
         OutlinedButton.icon(onPressed: _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
-        OutlinedButton.icon(onPressed: () async { final doc = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => SimpleDialog(title: const Text('تحميل مستند'), children: docs.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx,d), child: Text('${d['document_no']} • ${d['status']} • ${d['document_date']}'))).toList()); if (doc != null) await _openDoc(doc); }, icon: const Icon(Icons.folder_open), label: const Text('تحميل مستند')),
+        OutlinedButton.icon(onPressed: () async { final doc = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => SimpleDialog(title: const Text('تحميل مستند'), children: docs.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx,d), child: Text('${d['document_no']} • ${d['status']} • ${d['document_date']}'))).toList())); if (doc != null) await _openDoc(doc); }, icon: const Icon(Icons.folder_open), label: const Text('تحميل مستند')),
       ]))),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('إدخال الصنف', style: Theme.of(context).textTheme.titleMedium),
@@ -171,7 +171,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
           SizedBox(width: 300, child: DropdownButtonFormField<int>(value: products.any((p) => (p['id'] as num).toInt() == productId) ? productId : null, decoration: const InputDecoration(labelText: 'الصنف المختار', border: OutlineInputBorder()), items: matches.map((p) => DropdownMenuItem(value: (p['id'] as num).toInt(), child: Text('${p['name']} • ${p['code'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() { productId = v; final p = products.firstWhere((p) => (p['id'] as num).toInt() == v); _cost.text = n(p['cost_price']).toStringAsFixed(2); }); _loadBatches(); } : null)),
           SizedBox(width: 140, child: TextField(controller: _qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية الأساسية', border: OutlineInputBorder()))),
           SizedBox(width: 150, child: TextField(controller: _cost, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'تكلفة الوحدة', border: OutlineInputBorder()))),
-          SizedBox(width: 220, child: DropdownButtonFormField<int?>(value: batchId, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون دفعة')), ...batches.map((b) => DropdownMenuItem<int?>(value: (b['id'] as num).toInt(), child: Text('${b['batch_no'] ?? b['id']} • رصيد ${b['qty']}'))], onChanged: (v) { setState(() { batchId = v; final b = batches.where((b) => (b['id'] as num).toInt() == v).firstOrNull; _batch.text = (b?['batch_no'] ?? '').toString(); }); })),
+          SizedBox(width: 220, child: DropdownButtonFormField<int?>(value: batchId, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون دفعة')), ...batches.map((b) => DropdownMenuItem<int?>(value: (b['id'] as num).toInt(), child: Text('${b['batch_no'] ?? b['id']} • رصيد ${b['qty']}')))], onChanged: (v) { setState(() { batchId = v; final b = batches.where((b) => (b['id'] as num).toInt() == v).firstOrNull; _batch.text = (b?['batch_no'] ?? '').toString(); }); })),
           FilledButton.icon(onPressed: busy ? null : _addLine, icon: const Icon(Icons.add), label: const Text('إضافة سطر')),
           OutlinedButton.icon(onPressed: busy ? null : _deleteLine, icon: const Icon(Icons.delete_outline), label: const Text('حذف السطر')),
         ]),
@@ -189,7 +189,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
           DataCell(Text((r['batch_no'] ?? '—').toString())),
           DataCell(Text((n(r['qty']) * n(r['estimated_cost'])).toStringAsFixed(2))),
         ]);
-      }).toList()))),
+      }).toList())))),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing: 12, runSpacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
         Text('عدد السطور: ${lines.length}', style: const TextStyle(fontWeight: FontWeight.bold)),
         Text('إجمالي التكلفة التقديرية: ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
