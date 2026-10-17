@@ -156,7 +156,7 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
       }).toList())))),
       Card(child:Padding(padding:const EdgeInsets.all(12),child:Wrap(spacing:10,runSpacing:8,children:[
         FilledButton.icon(onPressed:busy?null:_post,icon:const Icon(Icons.publish),label:const Text('حفظ وترحيل')),
-        OutlinedButton.icon(onPressed:busy?null:_reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),
+        OutlinedButton.icon(onPressed:busy?null:_reloadDocs,icon:const Icon(Icons.refresh),label:const Text('تحديث')),
         OutlinedButton.icon(onPressed:()=>showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:const Text('سجل التحويلات'),content:SizedBox(width:700,child:ListView(shrinkWrap:true,children:docs.map((d)=>ListTile(title:Text((d['transfer_no']??'').toString()),subtitle:Text('${d['transfer_date']} • ${d['status']}'),onTap:(){Navigator.pop(ctx);_open(d);})).toList())),actions:[TextButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))])),icon:const Icon(Icons.list_alt),label:const Text('سجل التحويلات')),
         OutlinedButton.icon(onPressed:()=>Navigator.maybePop(context),icon:const Icon(Icons.close),label:const Text('إغلاق')),
       ]))),
