@@ -210,11 +210,19 @@ class DatabaseHelper {
     }
 
     final targetPath = await databasePath;
+    if (p.normalize(p.absolute(source.path)) == p.normalize(p.absolute(targetPath))) {
+      throw StateError('اختر ملف نسخة احتياطية مختلفًا عن قاعدة البيانات الحالية');
+    }
     final target = File(targetPath);
     await target.parent.create(recursive: true);
     await _db?.close();
     _db = null;
     try {
+      // Remove SQLite sidecar files so pages from the old database cannot be replayed.
+      for (final suffix in ['-wal', '-shm']) {
+        final sidecar = File('$targetPath$suffix');
+        if (await sidecar.exists()) await sidecar.delete();
+      }
       await source.copy(targetPath);
       await database; // Re-open and validate the restored database.
     } catch (_) {
