@@ -202,7 +202,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
     try {
       final movements = await _db.query(
         'cash_box_transactions',
-        where: 'cash_box_id=? AND transaction_date>=?',
+        where: 'cash_box_id=? AND datetime(transaction_date)>=datetime(?)',
         whereArgs: [_boxId, session['opened_at']],
       );
       final movementTotal = movements.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
@@ -210,7 +210,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       final expected = opening + movementTotal;
       final difference = actual - expected;
       final now = _stamp();
-      await _db.update('cash_sessions', {
+      final closed = await _db.update('cash_sessions', {
         'closed_at': now,
         'expected_balance': expected,
         'actual_balance': actual,
@@ -219,6 +219,11 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         'closed_by': context.read<AppProvider>().currentUser,
         'notes': notesController.text.trim(),
       }, where: 'id=? AND status=?', whereArgs: [session['id'], 'مفتوحة']);
+      if (closed != 1) {
+        _message('لم تُقفل الجلسة لأنها لم تعد مفتوحة؛ حدّث البيانات وحاول مجددًا');
+        await _reload();
+        return;
+      }
       await _db.insert('audit_log', {
         'action': 'إقفال جلسة صندوق',
         'entity': 'cash_sessions',
