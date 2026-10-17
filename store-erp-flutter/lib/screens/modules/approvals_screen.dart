@@ -66,12 +66,17 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
     if (yes != true || !mounted) return;
     setState(() => _busy = true);
     try {
-      await _db.update('approval_requests', {
+      final changed = await _db.update('approval_requests', {
         'status': approve ? 'معتمد' : 'مرفوض',
         'decision_notes': _decisionNotes.text.trim(),
         'decided_by': context.read<AppProvider>().currentUser,
         'decided_at': DateTime.now().toIso8601String(),
       }, where: 'id=? AND status=?', whereArgs: [row['id'], 'معلق']);
+      if (changed != 1) {
+        await _reload();
+        _message('لم يُحفظ القرار لأن الطلب لم يعد معلقًا؛ تم تحديث القائمة');
+        return;
+      }
       await _db.insert('audit_log', {
         'action': approve ? 'اعتماد طلب' : 'رفض طلب',
         'entity': 'approval_requests',
