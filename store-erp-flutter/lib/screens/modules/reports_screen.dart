@@ -1,5 +1,5 @@
 import 'dart:io';
-import 'package:csv/csv.dart';
+import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
@@ -33,14 +33,32 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
   double _sum(List<Map<String,Object?>> rows,String key) => rows.fold<double>(0,(sum,row)=>sum+((row[key] as num?)?.toDouble() ?? 0));
   String _money(num n) => n.toStringAsFixed(2);
+  CellValue _excelCell(Object? value) {
+    if (value == null) return TextCellValue('');
+    if (value is bool) return BoolCellValue(value);
+    if (value is int) return IntCellValue(value);
+    if (value is num) return DoubleCellValue(value.toDouble());
+    return TextCellValue(value.toString());
+  }
+
   Future<void> _export(List<Map<String,Object?>> rows, String name) async {
     if(rows.isEmpty) { _message('لا توجد بيانات لتصديرها'); return; }
     try {
-      final headers=rows.first.keys.toList();
-      final csv=const ListToCsvConverter().convert([headers,...rows.map((r)=>headers.map((h)=>r[h] ?? '').toList())]);
-      final docs=await getApplicationDocumentsDirectory(); final dir=Directory(p.join(docs.path,'StoreERP','exports')); await dir.create(recursive:true);
-      final file=File(p.join(dir.path,'${name}_${DateTime.now().millisecondsSinceEpoch}.csv'));
-      await file.writeAsString('\uFEFF$csv',flush:true); _message('تم التصدير: ${file.path}');
+      final headers = rows.first.keys.toList();
+      final workbook = Excel.createExcel();
+      final sheet = workbook['التقرير'];
+      sheet.appendRow(headers.map(_excelCell).toList());
+      for (final row in rows) {
+        sheet.appendRow(headers.map((h) => _excelCell(row[h])).toList());
+      }
+      final bytes = workbook.encode();
+      if (bytes == null) throw StateError('تعذر إنشاء ملف Excel');
+      final docs = await getApplicationDocumentsDirectory();
+      final dir = Directory(p.join(docs.path, 'StoreERP', 'exports'));
+      await dir.create(recursive: true);
+      final file = File(p.join(dir.path, '${name}_${DateTime.now().millisecondsSinceEpoch}.xlsx'));
+      await file.writeAsBytes(bytes, flush: true);
+      _message('تم تصدير ملف Excel: ${file.path}');
     } catch(e) {_message('فشل التصدير: $e');}
   }
   void _message(String s) { if(mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content:Text(s))); }
@@ -69,7 +87,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     ]);
   });
   Widget _metric(String title,String value,IconData icon)=>SizedBox(width:MediaQuery.sizeOf(context).width>1200?250:MediaQuery.sizeOf(context).width*.42,child:Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[Icon(icon,size:28,color:const Color(0xFF059669)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:const TextStyle(color:Colors.blueGrey)),const SizedBox(height:6),Text(value,style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold))]))]))));
-  Widget _section(String title,List<Map<String,Object?>> rows,List<String> keys,String filename)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('$title (${rows.length})',style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold))),TextButton.icon(onPressed:()=>_export(rows,filename),icon:const Icon(Icons.download),label:const Text('تصدير CSV'))]),const SizedBox(height:8),if(rows.isEmpty)const Padding(padding:EdgeInsets.all(12),child:Text('لا توجد بيانات ضمن الفترة'))else SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:keys.map((k)=>DataColumn(label:Text(k))).toList(),rows:rows.take(100).map((r)=>DataRow(cells:keys.map((k)=>DataCell(Text((r[k]??'—').toString()))).toList())).toList()))])));
+  Widget _section(String title,List<Map<String,Object?>> rows,List<String> keys,String filename)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('$title (${rows.length})',style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold))),TextButton.icon(onPressed:()=>_export(rows,filename),icon:const Icon(Icons.download),label:const Text('تصدير Excel (.xlsx)'))]),const SizedBox(height:8),if(rows.isEmpty)const Padding(padding:EdgeInsets.all(12),child:Text('لا توجد بيانات ضمن الفترة'))else SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:keys.map((k)=>DataColumn(label:Text(k))).toList(),rows:rows.take(100).map((r)=>DataRow(cells:keys.map((k)=>DataCell(Text((r[k]??'—').toString()))).toList())).toList()))])));
 }
 class _ReportData {
  final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines;
