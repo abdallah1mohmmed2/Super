@@ -216,14 +216,14 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         SizedBox(width: 220, child: TextField(controller: number, decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: _pickDate, icon: const Icon(Icons.calendar_month), label: Text(dateText(inventoryDate))),
         SizedBox(width: 120, child: TextField(controller: limit, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: 'حد التحميل', border: OutlineInputBorder()))),
-        OutlinedButton.icon(onPressed: _busy ? null : _newDocument, icon: const Icon(Icons.add), label: const Text('مستند جديد')),
-        OutlinedButton.icon(onPressed: _busy ? null : () async {
+        OutlinedButton.icon(onPressed: busy ? null : _newDocument, icon: const Icon(Icons.add), label: const Text('مستند جديد')),
+        OutlinedButton.icon(onPressed: busy ? null : () async {
           final picked = await showDialog<Map<String, Object?>>(context: context, builder: (ctx) => SimpleDialog(
             title: const Text('فتح مستند جرد'), children: documents.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx, d), child: Text('${d['document_no']} • ${d['inventory_date']} • ${d['status']}'))).toList(),
           ));
           if (picked != null) await _openDocument(picked);
         }, icon: const Icon(Icons.folder_open), label: const Text('فتح مستند')),
-        OutlinedButton.icon(onPressed: _busy ? null : _load, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
+        OutlinedButton.icon(onPressed: busy ? null : _load, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
       ]))),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('معايير تحميل الأصناف', style: Theme.of(context).textTheme.titleMedium),
@@ -236,8 +236,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
             onChanged: (v) => setState(() => categoryId = v),
           )),
           FilterChip(label: const Text('تضمين الأرصدة الصفرية'), selected: includeZero, onSelected: (v) => setState(() => includeZero = v)),
-          FilledButton.icon(onPressed: _busy ? null : _loadProducts, icon: const Icon(Icons.download), label: const Text('تحميل الأصناف')),
-          OutlinedButton.icon(onPressed: _busy ? null : _removeSelected, icon: const Icon(Icons.remove_circle_outline), label: const Text('إزالة المحدد')),
+          FilledButton.icon(onPressed: busy ? null : _loadProducts, icon: const Icon(Icons.download), label: const Text('تحميل الأصناف')),
+          OutlinedButton.icon(onPressed: busy ? null : _removeSelected, icon: const Icon(Icons.remove_circle_outline), label: const Text('إزالة المحدد')),
         ]),
       ]))),
       GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisCount: MediaQuery.sizeOf(context).width > 1200 ? 4 : 2, childAspectRatio: 2.5, crossAxisSpacing: 10, mainAxisSpacing: 10, children: [
@@ -269,13 +269,13 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         ]);
       }).toList())))),
       Card(child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 10, runSpacing: 8, children: [
-        OutlinedButton.icon(onPressed: _busy ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
-        OutlinedButton.icon(onPressed: _busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
-        FilledButton.icon(onPressed: _busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
-        OutlinedButton.icon(onPressed: _busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
+        OutlinedButton.icon(onPressed: busy ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
+        OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
+        FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
+        OutlinedButton.icon(onPressed: busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
         OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
-      if (_busy) const LinearProgressIndicator(),
+      if (busy) const LinearProgressIndicator(),
       Text('ملخص الفرق: زيادة $increase • عجز $decrease • صافي قيمة الفرق ${diffValue.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
       TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظات المستند', border: OutlineInputBorder())),
     ]);
