@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../data/database_helper.dart';
+import '../../providers/app_provider.dart';
 
 class InventoryCountScreen extends StatefulWidget {
   final String countType;
@@ -15,7 +17,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   final notes = TextEditingController();
   final number = TextEditingController();
   final limit = TextEditingController(text: '500');
-  List<Map<String, Object?>> warehouses = [], products = [], documents = [], items = [], categories = [];
+  List<Map<String, Object?>> warehouses = [], products = [], documents = [], items = [], categories = [], users = [];
   int? warehouseId, categoryId, documentId, selectedItemId;
   DateTime inventoryDate = DateTime.now();
   int selectedMonth = DateTime.now().month, selectedYear = DateTime.now().year;
@@ -49,9 +51,10 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       final p = await db.query('products', where: 'is_active=1', orderBy: 'name');
       final c = await db.query('categories', orderBy: 'name');
       final d = await db.query('inventory_documents', where: 'inventory_type=?', whereArgs: [typeCode], orderBy: 'inventory_date DESC', limit: 300);
+      final u = await db.query('users', orderBy: 'full_name');
       if (!mounted) return;
       setState(() {
-        warehouses = w; products = p; categories = c; documents = d;
+        warehouses = w; products = p; categories = c; documents = d; users = u;
         warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt();
       });
     } catch (e) { msg('تعذر تحميل بيانات الجرد: $e'); }
@@ -62,9 +65,24 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     }
   }
 
+  Future<int?> _currentUserId() async {
+    final current = context.read<AppProvider>().currentUser.trim();
+    final rows = await db.query('users');
+    final match = rows.where((u) => (u['username'] ?? '').toString() == current || (u['full_name'] ?? '').toString() == current).firstOrNull;
+    return (match?['id'] as num?)?.toInt();
+  }
+
+  String _userName(Object? id) {
+    if (id == null) return '—';
+    final user = users.where((u) => (u['id'] as num?)?.toInt() == (id as num?)?.toInt()).firstOrNull;
+    return user == null ? '—' : (user['full_name'] ?? user['username'] ?? '—').toString();
+  }
+
   Future<void> _newDocument() async {
     if (warehouseId == null) { msg('أضف مخزنًا نشطًا أولًا'); return; }
+    final creatorId = await _currentUserId();
     final id = await db.insert('inventory_documents', {
+      'created_by': creatorId,
       'document_no': 'CNT-${DateTime.now().microsecondsSinceEpoch}',
       'inventory_date': dateText(inventoryDate),
       'warehouse_id': warehouseId,
@@ -164,7 +182,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     if (documentId == null) { msg('حدد مستندًا'); return; }
     if (status != 'مسودة') { msg('يمكن اعتماد المسودة فقط'); return; }
     if (!await _save()) return;
-    final changed = await db.update('inventory_documents', {'status': 'معتمد'}, where: 'id=? AND status=?', whereArgs: [documentId, 'مسودة']);
+    final approverId = await _currentUserId();
+    final changed = await db.update('inventory_documents', {'status': 'معتمد', 'approved_by': approverId}, where: 'id=? AND status=?', whereArgs: [documentId, 'مسودة']);
     if (changed != 1) { msg('لم يتم الاعتماد: تغيرت حالة المستند أو لم يعد مسودة'); await _loadDocuments(); return; }
     if (mounted) setState(() => status = 'معتمد');
     await _loadDocuments();
@@ -178,6 +197,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     try {
       if (!await _save()) return;
       await db.postInventoryCount(documentId: documentId!);
+      final posterId = await _currentUserId();
+      await db.update('inventory_documents', {'posted_by': posterId}, where: 'id=? AND status=?', whereArgs: [documentId, 'مرحل']);
       if (mounted) setState(() => status = 'مرحل');
       await _loadDocuments();
       msg('تم ترحيل الجرد وتحديث أرصدة المخزون والقيود المحاسبية');
@@ -203,6 +224,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     final increase = differences.fold<double>(0, (sum, r) => sum + (n(r['count_qty']) - n(r['book_qty']) > 0 ? n(r['count_qty']) - n(r['book_qty']) : 0));
     final decrease = differences.fold<double>(0, (sum, r) => sum + (n(r['count_qty']) - n(r['book_qty']) < 0 ? n(r['book_qty']) - n(r['count_qty']) : 0));
     final diffValue = differences.fold<double>(0, (sum, r) => sum + n(r['difference_cost']));
+    final currentDocument = documents.where((d) => (d['id'] as num?)?.toInt() == documentId).firstOrNull;
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -211,6 +233,11 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         ])),
         Chip(label: Text(status), avatar: const Icon(Icons.fact_check_outlined, size: 18)),
       ]),
+      if (currentDocument != null) Card(child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 18, runSpacing: 8, children: [
+        Text('المنشئ: ${_userName(currentDocument['created_by'])}'),
+        Text('المعتمد: ${_userName(currentDocument['approved_by'])}'),
+        Text('المرحل: ${_userName(currentDocument['posted_by'])}'),
+      ]))),
       const SizedBox(height: 12),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing: 12, runSpacing: 12, crossAxisAlignment: WrapCrossAlignment.center, children: [
         SizedBox(width: 220, child: DropdownButtonFormField<int>(
