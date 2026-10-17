@@ -131,9 +131,9 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     msg('تم تحميل $added صنفًا إلى مستند الجرد');
   }
 
-  Future<void> _save() async {
-    if (documentId == null) { msg('أنشئ مستندًا أولًا'); return; }
-    if (status == 'مرحل') { msg('المستند مرحل ولا يمكن تعديله'); return; }
+  Future<bool> _save() async {
+    if (documentId == null) { msg('أنشئ مستندًا أولًا'); return false; }
+    if (status == 'مرحل') { msg('المستند مرحل ولا يمكن تعديله'); return false; }
     setState(() => busy = true);
     try {
       await db.update('inventory_documents', {
@@ -151,15 +151,19 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       }
       await _loadDocuments();
       msg('تم حفظ مستند الجرد');
-    } catch (e) { msg('تعذر حفظ مستند الجرد: $e'); }
-    finally { if (mounted) setState(() => busy = false); }
+      return true;
+    } catch (e) {
+      msg('تعذر حفظ مستند الجرد: $e');
+      return false;
+    } finally { if (mounted) setState(() => busy = false); }
   }
 
   Future<void> _approve() async {
     if (documentId == null) { msg('حدد مستندًا'); return; }
     if (status != 'مسودة') { msg('يمكن اعتماد المسودة فقط'); return; }
-    await _save();
-    await db.update('inventory_documents', {'status': 'معتمد'}, where: 'id=? AND status=?', whereArgs: [documentId, 'مسودة']);
+    if (!await _save()) return;
+    final changed = await db.update('inventory_documents', {'status': 'معتمد'}, where: 'id=? AND status=?', whereArgs: [documentId, 'مسودة']);
+    if (changed != 1) { msg('لم يتم الاعتماد: تغيرت حالة المستند أو لم يعد مسودة'); await _loadDocuments(); return; }
     if (mounted) setState(() => status = 'معتمد');
     await _loadDocuments();
     msg('تم اعتماد مستند الجرد');
@@ -170,7 +174,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     if (status != 'معتمد') { msg('اعتمد المستند قبل ترحيله'); return; }
     setState(() => busy = true);
     try {
-      await _save();
+      if (!await _save()) return;
       await db.postInventoryCount(documentId: documentId!);
       if (mounted) setState(() => status = 'مرحل');
       await _loadDocuments();
