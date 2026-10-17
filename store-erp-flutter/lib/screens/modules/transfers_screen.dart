@@ -33,21 +33,21 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
       final p=await db.query('products',where:'is_active=1',orderBy:'name');
       final d=await db.query('warehouse_transfers',orderBy:'transfer_date DESC',limit:300);
       if(!mounted)return;
-      setState(()=>{warehouses=w,products=p,docs=d,fromId??=(w.isEmpty?null:(w.first['id'] as num).toInt()),toId??=(w.length<2?null:(w[1]['id'] as num).toInt())});
+      setState(() { warehouses = w; products = p; docs = d; fromId ??= w.isEmpty ? null : (w.first['id'] as num).toInt(); toId ??= w.length < 2 ? null : (w[1]['id'] as num).toInt(); });
     }catch(e){msg('تعذر تحميل التحويلات: $e');}
   }
 
   Future<void> _loadUnits() async {
     if(productId==null){if(mounted)setState(()=>units=[]);return;}
     final rows=await db.query('product_units',where:'product_id=?',whereArgs:[productId],orderBy:'factor');
-    if(mounted)setState(()=>{units=rows,unitId=rows.isEmpty?null:(rows.first['id'] as num).toInt()});
+    if(mounted)setState(() { units = rows; unitId = rows.isEmpty ? null : (rows.first['id'] as num).toInt(); });
   }
 
   Future<void> _new() async {
     if(warehouses.length<2){msg('يلزم وجود مخزنين نشطين على الأقل');return;}
     final id=await db.insert('warehouse_transfers',{'transfer_no':'TR-${DateTime.now().microsecondsSinceEpoch}','transfer_date':dateText(date),'from_warehouse_id':fromId,'to_warehouse_id':toId,'status':'مسودة','notes':notes.text.trim()});
     if(!mounted)return;
-    setState(()=>{transferId=id,number.text='TR-$id',status='مسودة',lines=[],selectedLineId=null,notes.text=''});
+    setState(() { transferId = id; number.text = 'TR-$id'; status = 'مسودة'; lines = []; selectedLineId = null; notes.text = ''; });
     await _reloadDocs();msg('تم إنشاء مسودة التحويل');
   }
 
@@ -60,7 +60,7 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
     final id=(d['id'] as num).toInt();
     final l=await db.query('warehouse_transfer_lines',where:'transfer_id=?',whereArgs:[id],orderBy:'id');
     if(!mounted)return;
-    setState(()=>{transferId=id,number.text=(d['transfer_no']??'').toString(),date=DateTime.tryParse((d['transfer_date']??'').toString())??DateTime.now(),fromId=(d['from_warehouse_id'] as num?)?.toInt(),toId=(d['to_warehouse_id'] as num?)?.toInt(),status=(d['status']??'مسودة').toString(),notes.text=(d['notes']??'').toString(),lines=l,selectedLineId=null});
+    setState(() { transferId = id; number.text = (d['transfer_no'] ?? '').toString(); date = DateTime.tryParse((d['transfer_date'] ?? '').toString()) ?? DateTime.now(); fromId = (d['from_warehouse_id'] as num?)?.toInt(); toId = (d['to_warehouse_id'] as num?)?.toInt(); status = (d['status'] ?? 'مسودة').toString(); notes.text = (d['notes'] ?? '').toString(); lines = l; selectedLineId = null; });
   }
 
   Future<void> _addLine() async {
@@ -74,13 +74,13 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
     final unitName=(unit?['unit_name']??'قطعة').toString();
     await db.insert('warehouse_transfer_lines',{'transfer_id':transferId,'product_id':productId,'qty':amount,'factor':factor,'unit':unitName});
     final l=await db.query('warehouse_transfer_lines',where:'transfer_id=?',whereArgs:[transferId],orderBy:'id');
-    if(mounted)setState(()=>{lines=l,qty.text='1',selectedLineId=null});
+    if(mounted)setState(() { lines = l; qty.text = '1'; selectedLineId = null; });
   }
 
   Future<void> _removeLine() async {
     if(status!='مسودة'||selectedLineId==null){msg('حدد سطرًا من مسودة');return;}
     await db.delete('warehouse_transfer_lines',where:'id=? AND transfer_id=?',whereArgs:[selectedLineId,transferId]);
-    if(mounted)setState(()=>{lines.removeWhere((l)=>l['id']==selectedLineId),selectedLineId=null});
+    if(mounted)setState(() { lines.removeWhere((l) => l['id'] == selectedLineId); selectedLineId = null; });
   }
 
   Future<void> _save() async {
