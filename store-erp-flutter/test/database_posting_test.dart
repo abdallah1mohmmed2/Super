@@ -438,7 +438,7 @@ void main() {
     expect((increaseStock.single['qty'] as num).toDouble(), 7);
     expect((shortageStock.single['qty'] as num).toDouble(), 6);
     expect(journalLines, hasLength(4));
-    expectJournalBalanced('COUNT', documentId);
+    await expectJournalBalanced('COUNT', documentId);
   });
 
   test('inventory count rejects negative counted quantities atomically',
