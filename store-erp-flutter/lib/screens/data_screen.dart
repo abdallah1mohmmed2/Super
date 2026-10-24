@@ -758,8 +758,8 @@ class _DataScreenState extends State<DataScreen> {
       whereArgs: [_selectedId],
       limit: 1,
     );
-    if (headers.isEmpty || headers.first['status'] == 'مرحل') {
-      _message('لا يمكن تعديل بند مستند غير موجود أو مرحل');
+    if (headers.isEmpty || headers.first['status'] != 'مسودة') {
+      _message('لا يمكن تعديل بند مستند غير موجود أو غير مسودة');
       return;
     }
     final isSale = widget.screenKey == 'sales';
@@ -882,7 +882,7 @@ class _DataScreenState extends State<DataScreen> {
     if(table==null||parent==null||_selectedId==null) return;
     
     final parentRows = await DatabaseHelper.instance.query(config.table,where:'id=?',whereArgs:[_selectedId],limit:1);
-    if(parentRows.isNotEmpty && parentRows.first['status']=='مرحل'){ _message('لا يمكن تعديل بنود مستند مرحل'); return; }
+    if(parentRows.isNotEmpty && parentRows.first['status']!='مسودة'){ _message('لا يمكن تعديل بنود مستند غير مسودة'); return; }
     
     final yes = await showDialog<bool>(context:context,builder:(ctx)=>AlertDialog(title:const Text('حذف بند'),content:const Text('هل تريد حذف هذا البند من المستند؟'),actions:[TextButton(onPressed:()=>Navigator.pop(ctx,false),child:const Text('إلغاء')),FilledButton(onPressed:()=>Navigator.pop(ctx,true),child:const Text('حذف'))]));
     if(yes!=true || !mounted) return;
@@ -1126,8 +1126,8 @@ class _DataScreenState extends State<DataScreen> {
     if (_selectedId == null) return;
     final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
     final headers = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
-    if (headers.isEmpty || headers.first['status'] == 'مرحل') {
-      _message('لا يمكن حذف دفعات مستند غير موجود أو مرحل');
+    if (headers.isEmpty || headers.first['status'] != 'مسودة') {
+      _message('لا يمكن حذف دفعات مستند غير موجود أو غير مسودة');
       return;
     }
     final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف الدفعة'), content: const Text('هل تريد حذف هذه الدفعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
