@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import '../../data/database_helper.dart';
 
 class DamageDocumentsScreen extends StatefulWidget {
@@ -201,7 +202,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
         Text('إجمالي التكلفة التقديرية: ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
         FilledButton.icon(onPressed: busy ? null : _post, icon: const Icon(Icons.publish), label: const Text('حفظ وترحيل')),
         OutlinedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
-        OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
+        OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
       if (busy) const LinearProgressIndicator(),
     ]);
