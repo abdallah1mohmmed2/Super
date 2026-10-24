@@ -438,7 +438,7 @@ class _DataScreenState extends State<DataScreen> {
     if (_readOnly) { _message(widget.screenKey == 'inventory' ? 'أرصدة المخزون للعرض فقط؛ عدّلها عبر ترحيل فاتورة أو تحويل أو جرد' : 'هذه الشاشة للعرض فقط؛ نفّذ التعديل من شاشة العمليات المناسبة'); return false; }
     if (_selectedId != null && ['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) {
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1);
-      if (selected.isNotEmpty && selected.first['status'] == 'مرحل') { _message('لا يمكن تعديل مستند مرحل؛ أنشئ مستندًا عكسيًا بدلًا من ذلك'); return false; }
+      if (selected.isNotEmpty && selected.first['status'] != 'مسودة') { _message('لا يمكن تعديل مستند غير مسودة؛ أنشئ مستندًا عكسيًا عند الحاجة'); return false; }
     }
     final data = <String,Object?>{};
     for (final field in config.fields) {
@@ -574,7 +574,7 @@ class _DataScreenState extends State<DataScreen> {
     if (_selectedId == null || !['sales','purchases','returns'].contains(widget.screenKey)) return;
     final table = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
     final headers = await DatabaseHelper.instance.query(table, where:'id=?', whereArgs:[_selectedId], limit:1);
-    if (headers.isEmpty || headers.first['status'] == 'مرحل') return;
+    if (headers.isEmpty || headers.first['status'] != 'مسودة') return;
     if (widget.screenKey == 'returns') {
       final lines = await DatabaseHelper.instance.query('sales_return_lines', where:'return_id=?', whereArgs:[_selectedId]);
       final total = lines.fold<double>(0, (sum, line) => sum + (((line['qty'] as num?)?.toDouble() ?? 0) * ((line['price'] as num?)?.toDouble() ?? 0)));
@@ -631,7 +631,7 @@ class _DataScreenState extends State<DataScreen> {
   Future<void> _addLine() async {
     if (_selectedId != null) { 
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1); 
-      if (selected.isNotEmpty && selected.first['status'] == 'مرحل') { _message('لا يمكن إضافة بنود إلى مستند مرحل'); return; } 
+      if (selected.isNotEmpty && selected.first['status'] != 'مسودة') { _message('لا يمكن إضافة بنود إلى مستند غير مسودة'); return; } 
     }
     if (_selectedId == null) { _message('احفظ رأس المستند وحدده أولاً'); return; }
     final isSale = widget.screenKey == 'sales';
@@ -1081,7 +1081,7 @@ class _DataScreenState extends State<DataScreen> {
     final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
     final headerRows = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
     if (headerRows.isEmpty) { _message('المستند غير موجود'); return; }
-    if (headerRows.first['status'] == 'مرحل') { _message('لا يمكن تعديل دفعات مستند مرحل'); return; }
+    if (headerRows.first['status'] != 'مسودة') { _message('لا يمكن تعديل دفعات مستند غير مسودة'); return; }
     final amountController = TextEditingController();
     final referenceController = TextEditingController();
     final notesController = TextEditingController();
@@ -1194,7 +1194,7 @@ class _DataScreenState extends State<DataScreen> {
       return;
     }
     if (_readOnly) { _message('لا يمكن حذف رصيد المخزون مباشرة؛ استخدم مستند حركة معتمدًا'); return; }
-    if (row['status'] == 'مرحل') { _message('لا يمكن حذف مستند مرحل؛ استخدم إجراء عكسي موثق'); return; }
+    if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey) && row['status'] != 'مسودة') { _message('لا يمكن حذف مستند غير مسودة؛ استخدم إجراء عكسي موثق'); return; }
     final id = row['id']; if (id is! int) return;
     
     final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تأكيد الحذف'), content: const Text('هل تريد حذف السجل المحدد؟ قد تمنع العلاقات حذف سجلات مستخدمة.'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
