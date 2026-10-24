@@ -237,15 +237,15 @@ class _DataScreenState extends State<DataScreen> {
                   initialDate: current ?? now,
                   firstDate: DateTime(2000),
                   lastDate: DateTime(2100),
-                  helpText: 'اختر \${fieldLabel(field)}',
+                  helpText: 'اختر ${fieldLabel(field)}',
                   cancelText: 'إلغاء',
                   confirmText: 'اختيار',
                 );
                 if (picked != null && mounted) {
                   _controllers[field]!.text =
-                      '\${picked.year.toString().padLeft(4, '0')}-'
-                      '\${picked.month.toString().padLeft(2, '0')}-'
-                      '\${picked.day.toString().padLeft(2, '0')}';
+                      '${picked.year.toString().padLeft(4, '0')}-'
+                      '${picked.month.toString().padLeft(2, '0')}-'
+                      '${picked.day.toString().padLeft(2, '0')}';
                   setState(() {});
                 }
               }
