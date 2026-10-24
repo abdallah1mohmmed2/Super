@@ -166,6 +166,46 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     if (value != null && mounted) setState(() => date = value);
   }
 
+  Future<void> _cancelDoc() async {
+    if (documentId == null) { msg('حدد سندًا أولًا'); return; }
+    if (status == 'مرحل' || status == 'ملغي') { msg('لا يمكن إلغاء سند مرحل أو ملغي'); return; }
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('إلغاء سند التالف/المنتهي'),
+        content: Text('هل تريد إلغاء السند ${_number.text.trim()}؟ لن يُخصم المخزون ما دام السند غير مرحل.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('رجوع')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد الإلغاء')),
+        ],
+      ),
+    );
+    if (confirmed != true || !mounted) return;
+    setState(() => busy = true);
+    try {
+      final changed = await db.update(
+        'damage_documents',
+        {'status': 'ملغي'},
+        where: 'id=? AND status=?',
+        whereArgs: [documentId, 'مسودة'],
+      );
+      if (changed != 1) throw StateError('تغيرت حالة السند؛ حدّث القائمة وحاول مجددًا');
+      await db.insert('audit_log', {
+        'action': 'إلغاء سند تالف',
+        'entity': 'damage_documents',
+        'entity_id': documentId,
+        'details': 'رقم السند: ${_number.text.trim()}',
+      });
+      if (mounted) setState(() => status = 'ملغي');
+      await _reloadDocs();
+      msg('تم إلغاء السند دون تغيير المخزون');
+    } catch (e) {
+      msg('تعذر إلغاء السند: $e');
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final q = _productSearch.text.trim().toLowerCase();
@@ -178,11 +218,11 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [const Expanded(child: Text('سند التالف والمنتهي', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold))), Chip(label: Text(status))]),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing: 12, runSpacing: 12, children: [
-        SizedBox(width: 200, child: TextField(controller: _number, decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
+        SizedBox(width: 200, child: TextField(controller: _number, readOnly: status != 'مسودة', decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
         SizedBox(width: 200, child: DropdownButtonFormField<String>(value: documentType, decoration: const InputDecoration(labelText: 'نوع المستند', border: OutlineInputBorder()), items: const ['تالف','منتهي الصلاحية'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: status == 'مسودة' ? (v) => setState(() => documentType = v ?? 'تالف') : null)),
         SizedBox(width: 220, child: DropdownButtonFormField<int>(value: warehouses.any((w) => (w['id'] as num).toInt() == warehouseId) ? warehouseId : null, decoration: const InputDecoration(labelText: 'المخزن', border: OutlineInputBorder()), items: warehouses.map((w) => DropdownMenuItem(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString()))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() => warehouseId = v); _loadBatches(); } : null)),
-        OutlinedButton.icon(onPressed: _pickDate, icon: const Icon(Icons.calendar_month), label: Text(dateText)),
-        SizedBox(width: 240, child: TextField(controller: _cause, decoration: const InputDecoration(labelText: 'سبب التلف/الانتهاء', border: OutlineInputBorder()))),
+        OutlinedButton.icon(onPressed: status == 'مسودة' ? _pickDate : null, icon: const Icon(Icons.calendar_month), label: Text(dateText)),
+        SizedBox(width: 240, child: TextField(controller: _cause, readOnly: status != 'مسودة', decoration: const InputDecoration(labelText: 'سبب التلف/الانتهاء', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: _newDoc, icon: const Icon(Icons.add), label: const Text('جديد')),
         OutlinedButton.icon(onPressed: _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
         OutlinedButton.icon(onPressed: () async { final doc = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => SimpleDialog(title: const Text('تحميل مستند'), children: docs.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx,d), child: Text('${d['document_no']} • ${d['status']} • ${d['document_date']}'))).toList())); if (doc != null) await _openDoc(doc); }, icon: const Icon(Icons.folder_open), label: const Text('تحميل مستند')),
@@ -219,7 +259,8 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
         Text('عدد السطور: ${lines.length}', style: const TextStyle(fontWeight: FontWeight.bold)),
         Text('إجمالي التكلفة التقديرية: ${total.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.bold)),
         FilledButton.icon(onPressed: busy ? null : _post, icon: const Icon(Icons.publish), label: const Text('حفظ وترحيل')),
-        OutlinedButton.icon(onPressed: _load, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
+        OutlinedButton.icon(onPressed: busy ? null : _cancelDoc, icon: const Icon(Icons.cancel_outlined), label: const Text('إلغاء')),
+        OutlinedButton.icon(onPressed: busy ? null : _load, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
         OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
       if (busy) const LinearProgressIndicator(),
