@@ -1057,14 +1057,8 @@ class _DataScreenState extends State<DataScreen> {
       await File(source).copy(createdPath);
       var status = 'نجاح — دون تحقق';
       if (_verifyBackup) {
-        final file = File(createdPath);
-        final handle = await file.open();
-        final header = await handle.read(16);
-        await handle.close();
-        if (header.length != 16 || ascii.decode(header.take(15).toList(), allowInvalid: true) != 'SQLite format 3' || header[15] != 0) {
-          throw StateError('فشل التحقق من ملف النسخة');
-        }
-        status = 'نجاح — تم التحقق من ترويسة SQLite';
+        await DatabaseHelper.instance.verifyDatabaseFile(createdPath);
+        status = 'نجاح — اجتاز ملف النسخة فحص سلامة SQLite';
       }
       if (!mounted) return;
       await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': status});
