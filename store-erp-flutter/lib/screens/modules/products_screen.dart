@@ -216,7 +216,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
         ActionButton('تصدير CSV',icon:Icons.file_download_outlined,onPressed:exportProducts),
         ActionButton('تفريغ',icon:Icons.cleaning_services,onPressed:clearForm),
         ActionButton('حذف',icon:Icons.delete_outline,onPressed:deleteProduct),
-        ActionButton('إغلاق',icon:Icons.close,onPressed:()=>Navigator.maybePop(context)),
+        ActionButton('إغلاق',icon:Icons.close,onPressed:()=>closeModule(context)),
       ]),
       const SizedBox(height:10),
       Expanded(child:Row(children:[
