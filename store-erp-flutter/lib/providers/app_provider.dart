@@ -6,6 +6,7 @@ import '../data/database_helper.dart';
 class AppProvider extends ChangeNotifier {
   final db = DatabaseHelper.instance;
   String currentUser = 'أحمد علي';
+  String currentRoles = '';
   bool loggedIn = false;
   int refreshVersion = 0;
   Future<List<Map<String,Object?>>> load(String table) => db.query(table, orderBy: 'id DESC');
@@ -19,7 +20,10 @@ class AppProvider extends ChangeNotifier {
     if (!valid) throw StateError('اسم المستخدم أو كلمة المرور غير صحيحة');
     // Upgrade legacy plain-text seed/credentials after a successful login.
     if (stored == password) await db.update('users', {'password_hash':_passwordDigest(password)}, where:'id=?', whereArgs:[rows.first['id']]);
-    currentUser = rows.first['full_name'] as String? ?? username; loggedIn = true; notifyListeners();
+    currentUser = rows.first['full_name'] as String? ?? username;
+    currentRoles = (rows.first['roles'] ?? '').toString();
+    loggedIn = true;
+    notifyListeners();
   }
   Future<int> create(String table, Map<String,Object?> data) async { final id = await db.insert(table,data); await refresh(); return id; }
   Future<void> edit(String table, int id, Map<String,Object?> data) async { await db.update(table,data,where:'id=?',whereArgs:[id]); await refresh(); }
