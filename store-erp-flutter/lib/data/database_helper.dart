@@ -231,6 +231,25 @@ class DatabaseHelper {
     await db.rawQuery('PRAGMA wal_checkpoint(FULL)');
   }
 
+  /// Opens a backup read-only and runs SQLite's full integrity check.
+  Future<void> verifyDatabaseFile(String filePath) async {
+    final file = File(filePath);
+    if (!await file.exists()) throw StateError('ملف قاعدة البيانات غير موجود');
+    final candidate = await databaseFactory.openDatabase(
+      filePath,
+      options: OpenDatabaseOptions(readOnly: true, singleInstance: false),
+    );
+    try {
+      final rows = await candidate.rawQuery('PRAGMA integrity_check');
+      final result = rows.isEmpty ? '' : rows.first.values.first.toString();
+      if (result.toLowerCase() != 'ok') {
+        throw StateError('فشل فحص سلامة قاعدة البيانات: ${result.isEmpty ? 'لا توجد نتيجة' : result}');
+      }
+    } finally {
+      await candidate.close();
+    }
+  }
+
   /// Replaces the local database with a validated backup file.
   /// The current database connection is closed before the file is replaced.
   Future<void> restoreDatabaseFrom(String sourcePath) async {
@@ -252,6 +271,7 @@ class DatabaseHelper {
     if (p.normalize(p.absolute(source.path)) == p.normalize(p.absolute(targetPath))) {
       throw StateError('اختر ملف نسخة احتياطية مختلفًا عن قاعدة البيانات الحالية');
     }
+    await verifyDatabaseFile(sourcePath);
     final target = File(targetPath);
     await target.parent.create(recursive: true);
     await _db?.close();
