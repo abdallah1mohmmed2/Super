@@ -770,7 +770,7 @@ class _DataScreenState extends State<DataScreen> {
         await db.transferCash(transferId:_selectedId!);
       } else if (widget.screenKey == 'damage') {
         final lines = await db.query('damage_lines', where:'document_id=?', whereArgs:[_selectedId]);
-        await db.postDamage(documentId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble()}).toList());
+        await db.postDamage(documentId:_selectedId!, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'estimated_cost':(r['estimated_cost'] as num?)?.toDouble() ?? 0}).toList());
       } else if (widget.screenKey == 'countdocs') {
         await db.postInventoryCount(documentId:_selectedId!);
       } else { 
