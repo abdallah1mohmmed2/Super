@@ -803,11 +803,11 @@ class _DataScreenState extends State<DataScreen> {
       } else {
         updates.addAll({
           'qty': qty,
-          isPurchase ? 'cost' : 'price': price,
           'discount': discount,
           'tax': tax,
           'line_total': (qty * price - discount + tax).clamp(0, double.infinity),
         });
+        updates[isPurchase ? 'cost' : 'price'] = price;
         if (isPurchase) {
           final production = productionController.text.trim();
           final expiry = expiryController.text.trim();
