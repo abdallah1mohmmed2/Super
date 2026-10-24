@@ -43,7 +43,7 @@ class _DataScreenState extends State<DataScreen> {
   bool _referencesLoading = true;
 
   static const _choiceFields = <String, List<String>>{
-    'payment_method': ['نقدي', 'آجل', 'جزئي', 'تحويل بنكي'],
+    'payment_method': ['نقدي', 'بطاقة', 'تحويل بنكي', 'شيك'],
     'inventory_type': ['فعلي', 'يومي', 'شهري', 'سنوي'],
     'document_type': ['تالف', 'منتهي'],
     'is_active': ['1', '0'],
@@ -114,6 +114,22 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'is_active' && ['suppliers', 'users'].contains(widget.screenKey)) {
+      final active = _controllers[field]!.text.isEmpty ||
+          _controllers[field]!.text == '1';
+      return SizedBox(
+        width: width,
+        child: SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(fieldLabel(field)),
+          value: active,
+          onChanged: (value) {
+            _controllers[field]!.text = value ? '1' : '0';
+            setState(() {});
+          },
+        ),
+      );
+    }
     if (field == 'cashier' && widget.screenKey == 'sales') {
       final savedCashier = _controllers[field]!.text.trim();
       final cashier = savedCashier.isNotEmpty
