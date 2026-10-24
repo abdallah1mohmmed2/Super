@@ -76,6 +76,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
     double debit,
     double credit,
   ) async {
+    final salesTotal = _money(_sum(sales, 'net'));
+    final purchasesTotal = _money(_sum(purchases, 'net'));
+    final stockTotal = _money(stockValue);
+    final debitTotal = _money(debit);
+    final creditTotal = _money(credit);
+    final trialBalanceDifference = _money(debit - credit);
     await showDialog<void>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -87,11 +93,11 @@ class _ReportsScreenState extends State<ReportsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text('الفترة: ${_from.toIso8601String().substring(0, 10)} إلى ${_to.toIso8601String().substring(0, 10)}'),
-                Text('صافي المبيعات: ${_money(_sum(sales, 'net'))}'),
-                Text('صافي المشتريات: ${_money(_sum(purchases, 'net'))}'),
-                Text('قيمة المخزون التقديرية: ${_money(stockValue)}'),
-                Text('إجمالي المدين: ${_money(debit)} — إجمالي الدائن: ${_money(credit)}'),
-                Text('فرق ميزان المراجعة: ${_money(debit - credit)}'),
+                Text('صافي المبيعات: $salesTotal'),
+                Text('صافي المشتريات: $purchasesTotal'),
+                Text('قيمة المخزون التقديرية: $stockTotal'),
+                Text('إجمالي المدين: $debitTotal — إجمالي الدائن: $creditTotal'),
+                Text('فرق ميزان المراجعة: $trialBalanceDifference'),
                 const Divider(height: 24),
                 _previewTable('المبيعات', sales, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
                 _previewTable('المشتريات', purchases, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
