@@ -877,13 +877,35 @@ class DatabaseHelper {
       final from = await txn.query('cash_boxes', where:'id=?', whereArgs:[fromId], limit:1);
       final to = await txn.query('cash_boxes', where:'id=?', whereArgs:[toId], limit:1);
       if (from.isEmpty || to.isEmpty) throw StateError('الصندوق المصدر أو المستلم غير موجود');
+      if (((from.first['is_active'] as num?)?.toInt() ?? 1) != 1 ||
+          ((to.first['is_active'] as num?)?.toInt() ?? 1) != 1) {
+        throw StateError('لا يمكن ترحيل تحويل إلى صندوق غير نشط');
+      }
       if (((from.first['balance'] as num?)?.toDouble() ?? 0) < amount) throw StateError('رصيد الصندوق المصدر غير كافٍ');
       await txn.rawUpdate('UPDATE cash_boxes SET balance=balance-? WHERE id=?',[amount,fromId]);
       await txn.rawUpdate('UPDATE cash_boxes SET balance=balance+? WHERE id=?',[amount,toId]);
       await txn.insert('cash_box_transactions', {'cash_box_id':fromId,'type':'تحويل صادر','amount':-amount,'reference':'TRANSFER-$transferId'});
       await txn.insert('cash_box_transactions', {'cash_box_id':toId,'type':'تحويل وارد','amount':amount,'reference':'TRANSFER-$transferId'});
       await txn.update('cash_transfers', {'status':'مرحل'}, where:'id=?', whereArgs:[transferId]);
-      await txn.insert('audit_log', {'action':'ترحيل تحويل نقدي','entity':'cash_transfers','entity_id':transferId});
+      final fromName = (from.first['name'] ?? 'الصندوق المصدر').toString();
+      final toName = (to.first['name'] ?? 'الصندوق المستلم').toString();
+      final journalId = await _createJournal(
+        txn,
+        'CASH_TRANSFER',
+        transferId,
+        transferDate,
+        'تحويل نقدي ${h['transfer_no'] ?? transferId}: $fromName إلى $toName',
+        [
+          ['1000', 'الصندوق - $toName', amount, 0],
+          ['1000', 'الصندوق - $fromName', 0, amount],
+        ],
+      );
+      await txn.insert('audit_log', {
+        'action':'ترحيل تحويل نقدي',
+        'entity':'cash_transfers',
+        'entity_id':transferId,
+        'details':'قيد محاسبي $journalId؛ المبلغ ${amount.toStringAsFixed(2)}',
+      });
     });
   }
 
