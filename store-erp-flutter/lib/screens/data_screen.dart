@@ -639,7 +639,6 @@ class _DataScreenState extends State<DataScreen> {
     final isReturn = widget.screenKey == 'returns';
     final isTransfer = widget.screenKey == 'transfers';
     final isDamage = widget.screenKey == 'damage';
-    final isReturn = widget.screenKey == 'returns';
     final isCountDoc = widget.screenKey == 'countdocs';
     if (!(isSale || isPurchase || isTransfer || isDamage || isReturn || isCountDoc)) return;
     
@@ -764,6 +763,7 @@ class _DataScreenState extends State<DataScreen> {
     }
     final isSale = widget.screenKey == 'sales';
     final isPurchase = widget.screenKey == 'purchases';
+    final isReturn = widget.screenKey == 'returns';
     final qtyController = TextEditingController(text: ((row['qty'] as num?)?.toDouble() ?? 0).toString());
     final priceController = TextEditingController(text: ((row[isPurchase ? 'cost' : 'price'] as num?)?.toDouble() ?? 0).toString());
     final discountController = TextEditingController(text: ((row['discount'] as num?)?.toDouble() ?? 0).toString());
