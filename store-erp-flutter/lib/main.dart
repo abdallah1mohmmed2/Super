@@ -54,15 +54,10 @@ class _RootShellState extends State<RootShell>{
      final settings = jsonDecode(await settingsFile.readAsString()) as Map<String, dynamic>;
      if (settings['daily'] != true) return;
      final time = (settings['time'] ?? '22:00').toString().trim();
-     final match = RegExp(r'^([01]\\d|2[0-3]):[0-5]\\d
- Widget _buildApp(BuildContext context,AppProvider provider){return Directionality(textDirection:TextDirection.rtl,child:Scaffold(body:Row(children:[AnimatedContainer(duration:const Duration(milliseconds:180),width:_collapsed?76:258,color:AppTheme.navy,child:Column(children:[Padding(padding:const EdgeInsets.fromLTRB(14,20,14,18),child:Row(children:[const Icon(Icons.storefront,color:AppTheme.emerald,size:30),if(!_collapsed)const Expanded(child:Padding(padding:EdgeInsets.only(right:10),child:Text('متجر ERP',style:TextStyle(color:Colors.white,fontSize:18,fontWeight:FontWeight.bold))))]),),Expanded(child:ListView(children:[_navTile('dashboard','لوحة التحكم',Icons.dashboard_outlined),for(final group in ['العمليات','الإعدادات','الجرد','الإدارة'])...[_groupLabel(group),...navItems.where((e)=>e.group==group).map((e)=>_navTile(e.key,e.title,e.icon))]])),Padding(padding:const EdgeInsets.all(10),child:IconButton(onPressed:()=>setState(()=>_collapsed=!_collapsed),icon:Icon(_collapsed?Icons.chevron_left:Icons.chevron_right,color:Colors.white70)))])),Expanded(child:Column(children:[Container(height:68,padding:const EdgeInsets.symmetric(horizontal:22),color:Colors.white,child:Row(children:[IconButton(onPressed:()=>setState(()=>_collapsed=!_collapsed),icon:const Icon(Icons.menu)),const SizedBox(width:8),Expanded(child:Text(_selected=='dashboard'?'لوحة التحكم':navItems.firstWhere((e)=>e.key==_selected,orElse:()=>const NavItem('','النظام','',Icons.apps)).title,style:const TextStyle(fontSize:20,fontWeight:FontWeight.bold))),const Icon(Icons.circle,color:AppTheme.emerald,size:10),const SizedBox(width:6),const Text('متصل'),const SizedBox(width:18),CircleAvatar(backgroundColor:AppTheme.navy,child:Text(provider.currentUser.isEmpty?'أ':provider.currentUser.characters.first,style:const TextStyle(color:Colors.white))),const SizedBox(width:8),Text(provider.currentUser),const SizedBox(width:8),IconButton(tooltip:'تسجيل الخروج',onPressed:()=>setState(()=>provider.loggedIn=false),icon:const Icon(Icons.logout))])),Expanded(child:_selected=='dashboard'?DashboardScreen(onOpen:(key)=>setState(()=>_selected=key)):ModuleScreen(key:ValueKey(_selected),screenKey:_selected))]))])));}
- Widget _groupLabel(String group)=>Padding(padding:EdgeInsets.fromLTRB(_collapsed?0:18,18, _collapsed?0:18,6),child:Text(_collapsed?'•':group,style:const TextStyle(color:Colors.white54,fontSize:12,fontWeight:FontWeight.bold)));
- Widget _navTile(String key,String title,IconData icon){final active=_selected==key;return Tooltip(message:_collapsed?title:'',child:Padding(padding:const EdgeInsets.symmetric(horizontal:8,vertical:2),child:Material(color:active?AppTheme.emerald.withValues(alpha:.18):Colors.transparent,borderRadius:BorderRadius.circular(10),child:InkWell(borderRadius:BorderRadius.circular(10),onTap:()=>setState(()=>_selected=key),child:Padding(padding:EdgeInsets.symmetric(horizontal:_collapsed?0:12,vertical:12),child:Row(mainAxisAlignment:_collapsed?MainAxisAlignment.center:MainAxisAlignment.start,children:[Icon(icon,color:active?AppTheme.emerald:Colors.white70,size:21),if(!_collapsed)Expanded(child:Padding(padding:const EdgeInsets.only(right:12),child:Text(title,maxLines:1,overflow:TextOverflow.ellipsis,style:TextStyle(color:active?Colors.white:Colors.white70,fontWeight:active?FontWeight.bold:FontWeight.normal))))]))))));}
-}
-).firstMatch(time);
+     final match = RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').firstMatch(time);
      if (match == null) return;
-     final hour = int.parse(match.group(1)!.length == 2 ? match.group(1)! : '00');
-     final minute = int.parse(time.substring(3, 5));
+     final hour = int.parse(match.group(1)!);
+     final minute = int.parse(match.group(2)!);
      final now = DateTime.now();
      if (now.hour < hour || (now.hour == hour && now.minute < minute)) return;
      final today = '${now.year.toString().padLeft(4, '0')}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
@@ -73,7 +68,7 @@ class _RootShellState extends State<RootShell>{
      final folderPath = (settings['folder'] ?? defaultFolder).toString().trim();
      final rawName = (settings['filename'] ?? 'store_backup').toString().trim();
      if (folderPath.isEmpty || rawName.isEmpty) throw StateError('حدد مجلد واسم النسخة في إعدادات النسخ الاحتياطي');
-     final safeName = p.basenameWithoutExtension(rawName).replaceAll(RegExp(r'[^a-zA-Z0-9_\\-\\u0600-\\u06FF]'), '_');
+     final safeName = p.basenameWithoutExtension(rawName).replaceAll(RegExp(r'[^a-zA-Z0-9_\-\u0600-\u06FF]'), '_');
      final stamp = now.toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
      final folder = Directory(folderPath);
      await folder.create(recursive: true);
