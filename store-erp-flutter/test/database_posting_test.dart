@@ -376,4 +376,118 @@ void main() {
     expect((cashBoxes.single['balance'] as num).toDouble(), 0);
     await expectJournalBalanced('SALES_RETURN', returnId);
   });
+
+  test('inventory count posts simultaneous increases and shortages separately',
+      () async {
+    final db = await helper.database;
+    final increaseProductId = await createProduct(cost: 4);
+    final shortageProductId = await createProduct(cost: 3);
+    await db.insert('inventory', {
+      'product_id': increaseProductId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    await db.insert('inventory', {
+      'product_id': shortageProductId,
+      'warehouse_id': 1,
+      'qty': 8,
+    });
+    final documentId = await db.insert('inventory_documents', {
+      'document_no': 'TEST-COUNT-MIXED-1',
+      'inventory_date': today(),
+      'warehouse_id': 1,
+      'inventory_type': 'فعلي',
+      'status': 'معتمد',
+    });
+    await db.insert('inventory_items', {
+      'document_id': documentId,
+      'product_id': increaseProductId,
+      'book_qty': 5,
+      'count_qty': 7,
+    });
+    await db.insert('inventory_items', {
+      'document_id': documentId,
+      'product_id': shortageProductId,
+      'book_qty': 8,
+      'count_qty': 6,
+    });
+
+    await helper.postInventoryCount(documentId: documentId);
+
+    final increaseStock = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [increaseProductId, 1],
+    );
+    final shortageStock = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [shortageProductId, 1],
+    );
+    final journal = await helper.query(
+      'accounting_entries',
+      where: 'source_type=? AND source_id=?',
+      whereArgs: ['COUNT', documentId],
+    );
+    final journalLines = await helper.query(
+      'accounting_entry_lines',
+      where: 'entry_id=?',
+      whereArgs: [journal.single['id']],
+    );
+
+    expect((increaseStock.single['qty'] as num).toDouble(), 7);
+    expect((shortageStock.single['qty'] as num).toDouble(), 6);
+    expect(journalLines, hasLength(4));
+    expectJournalBalanced('COUNT', documentId);
+  });
+
+  test('inventory count rejects negative counted quantities atomically',
+      () async {
+    final db = await helper.database;
+    final productId = await createProduct();
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    final documentId = await db.insert('inventory_documents', {
+      'document_no': 'TEST-COUNT-NEGATIVE-1',
+      'inventory_date': today(),
+      'warehouse_id': 1,
+      'inventory_type': 'فعلي',
+      'status': 'معتمد',
+    });
+    await db.insert('inventory_items', {
+      'document_id': documentId,
+      'product_id': productId,
+      'book_qty': 5,
+      'count_qty': -1,
+    });
+
+    await expectLater(
+      helper.postInventoryCount(documentId: documentId),
+      throwsA(isA<StateError>()),
+    );
+    final stock = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    final document = await helper.query(
+      'inventory_documents',
+      where: 'id=?',
+      whereArgs: [documentId],
+    );
+    expect((stock.single['qty'] as num).toDouble(), 5);
+    expect(document.single['status'], 'معتمد');
+    expect(
+      await helper.query(
+        'accounting_entries',
+        where: 'source_type=? AND source_id=?',
+        whereArgs: ['COUNT', documentId],
+      ),
+      isEmpty,
+    );
+  });
+
 }
