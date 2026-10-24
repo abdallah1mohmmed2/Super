@@ -24,6 +24,18 @@ void main() {
     });
   }
 
+  Future<int> createOpenSession({int cashBoxId = 1}) async {
+    final db = await helper.database;
+    return db.insert('cash_sessions', {
+      'cash_box_id': cashBoxId,
+      'session_no': 'TEST-CS-${DateTime.now().microsecondsSinceEpoch}',
+      'opened_at': DateTime.now().toIso8601String(),
+      'opening_balance': 0,
+      'status': 'مفتوحة',
+      'opened_by': 'test',
+    });
+  }
+
   Future<void> expectJournalBalanced(String sourceType, int sourceId) async {
     final entries = await helper.query(
       'accounting_entries',
@@ -61,6 +73,8 @@ void main() {
       'invoice_date': today(),
       'warehouse_id': 1,
       'cash_box_id': 1,
+      'cash_session_id': await createOpenSession(),
+      'cashier': 'test',
       'net': 20,
       'paid': 20,
       'status': 'مسودة',
@@ -211,6 +225,8 @@ void main() {
       'customer_id': 1,
       'warehouse_id': 1,
       'cash_box_id': 1,
+      'cash_session_id': await createOpenSession(),
+      'cashier': 'test',
       'net': 20,
       'paid': 20,
       'status': 'مسودة',
@@ -293,6 +309,8 @@ void main() {
       'customer_id': 1,
       'warehouse_id': 1,
       'cash_box_id': 1,
+      'cash_session_id': await createOpenSession(),
+      'cashier': 'test',
       'net': 20,
       'paid': 0,
       'status': 'مسودة',
