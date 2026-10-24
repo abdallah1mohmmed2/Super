@@ -1292,6 +1292,7 @@ class _DataScreenState extends State<DataScreen> {
               if (['sales','purchases','returns'].contains(widget.screenKey) && _selectedId != null) ActionButton('الدفعات / التسوية', icon: Icons.payments_outlined, onPressed: _addPayment),
               if (widget.screenKey == 'returns' && _selectedId != null) ActionButton('استدعاء الفاتورة الأصلية', icon: Icons.receipt_long_outlined, onPressed: _loadOriginalInvoice),
               if (['sales','purchases'].contains(widget.screenKey)) ActionButton('فاتورة جديدة', icon: Icons.note_add_outlined, onPressed: _clear),
+              ActionButton('إغلاق', icon: Icons.close, onPressed: () => closeModule(context)),
             ]), 
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start, 
