@@ -23,7 +23,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   int? _sessionId;
   bool _active = true;
   bool _busy = false;
-  String _filter = '';
+  String _boxFilter = '', _transactionFilter = '';
 
   @override
   void initState() {
@@ -267,7 +267,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   );
 
   Widget build(BuildContext context) {
-    final visibleBoxes = _boxes.where((box) => _filter.isEmpty || (box['name'] ?? '').toString().toLowerCase().contains(_filter.toLowerCase())).toList();
+    final visibleBoxes = _boxes.where((box) => _boxFilter.isEmpty || (box['name'] ?? '').toString().toLowerCase().contains(_boxFilter.toLowerCase())).toList();
     final box = _selectedBox;
     final session = _activeSession;
     final expected = session == null ? null : (session['opening_balance'] as num?)?.toDouble();
@@ -333,12 +333,12 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       ]),
       const SizedBox(height: 8),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Row(children: [Expanded(child: Text('حركات الصندوق ${_transactions.length}', style: Theme.of(context).textTheme.titleMedium)), SizedBox(width: 260, child: TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث في الحركات'), onChanged: (v) => setState(() => _filter = v.trim()))), const SizedBox(width: 8), OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.download), label: const Text('تحميل الحركات'))]),
+        Row(children: [Expanded(child: Text('حركات الصندوق ${_transactions.length}', style: Theme.of(context).textTheme.titleMedium)), SizedBox(width: 260, child: TextField(controller: _search, decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث في الحركات'), onChanged: (v) => setState(() => _transactionFilter = v.trim()))), const SizedBox(width: 8), OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.download), label: const Text('تحميل الحركات'))]),
         const SizedBox(height: 8),
         if (_transactions.isEmpty) const Text('لا توجد حركات مسجلة لهذا الصندوق.')
         else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(columns: const [
           DataColumn(label: Text('التاريخ')), DataColumn(label: Text('نوع الحركة')), DataColumn(label: Text('الداخل / الخارج')), DataColumn(label: Text('المرجع')), DataColumn(label: Text('ملاحظات')),
-        ], rows: _transactions.where((r) => _filter.isEmpty || r.values.any((v) => v.toString().toLowerCase().contains(_filter.toLowerCase()))).map((r) => DataRow(cells: [
+        ], rows: _transactions.where((r) => _transactionFilter.isEmpty || r.values.any((v) => v.toString().toLowerCase().contains(_transactionFilter.toLowerCase()))).map((r) => DataRow(cells: [
           DataCell(Text((r['transaction_date'] ?? '—').toString())),
           DataCell(Text((r['type'] ?? '—').toString())),
           DataCell(Text(_money(r['amount']), style: TextStyle(color: ((r['amount'] as num?)?.toDouble() ?? 0) < 0 ? Colors.red : Colors.green))),
@@ -371,7 +371,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text('قائمة الصناديق (${visibleBoxes.length})', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        TextField(decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث باسم الصندوق'), onChanged: (v) => setState(() => _filter = v.trim())),
+        TextField(decoration: const InputDecoration(prefixIcon: Icon(Icons.search), hintText: 'بحث باسم الصندوق'), onChanged: (v) => setState(() => _boxFilter = v.trim())),
         const SizedBox(height: 8),
         if (visibleBoxes.isEmpty) const Text('لا توجد صناديق.')
         else SingleChildScrollView(scrollDirection: Axis.horizontal, child: DataTable(columns: const [
