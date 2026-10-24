@@ -516,6 +516,27 @@ class DatabaseHelper {
         if ((cashPaid + bankPaid + checksReceived - paid).abs() > 0.005) {
           throw StateError('مجموع دفعات المبيعات لا يطابق المبلغ المدفوع في رأس الفاتورة');
         }
+      } else {
+        cashPaid = 0;
+        switch ((sale['payment_method'] ?? 'نقدي').toString()) {
+          case 'نقدي':
+            cashPaid = paid;
+            break;
+          case 'بطاقة':
+          case 'تحويل بنكي':
+            bankPaid = paid;
+            break;
+          case 'شيك':
+            checksReceived = paid;
+            break;
+          case 'على الرصيد':
+            if (paid > 0.005) {
+              throw StateError('طريقة «على الرصيد» لا تقبل مبلغًا مدفوعًا دون تسجيل دفعات فعلية');
+            }
+            break;
+          default:
+            throw StateError('طريقة سداد غير مدعومة في فاتورة المبيعات: ${sale['payment_method']}');
+        }
       }
       await txn.update('sales_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'customer_id':customerId}, where:'id=?', whereArgs:[saleId]);
       if (cashPaid > 0) {
@@ -624,6 +645,27 @@ class DatabaseHelper {
         }
         if ((cashPaid + bankPaid + checksPaid - paid).abs() > 0.005) {
           throw StateError('مجموع دفعات المشتريات لا يطابق المبلغ المدفوع في رأس الفاتورة');
+        }
+      } else {
+        cashPaid = 0;
+        switch ((header['payment_method'] ?? 'نقدي').toString()) {
+          case 'نقدي':
+            cashPaid = paid;
+            break;
+          case 'بطاقة':
+          case 'تحويل بنكي':
+            bankPaid = paid;
+            break;
+          case 'شيك':
+            checksPaid = paid;
+            break;
+          case 'على الرصيد':
+            if (paid > 0.005) {
+              throw StateError('طريقة «على الرصيد» لا تقبل مبلغًا مدفوعًا دون تسجيل دفعات فعلية');
+            }
+            break;
+          default:
+            throw StateError('طريقة سداد غير مدعومة في فاتورة المشتريات: ${header['payment_method']}');
         }
       }
       await txn.update('purchases_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'supplier_id':supplierId}, where:'id=?', whereArgs:[purchaseId]);
