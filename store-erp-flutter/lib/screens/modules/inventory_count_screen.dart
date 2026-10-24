@@ -258,6 +258,62 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   }
 
   @override
+  Future<void> _printPreview() async {
+    final warehouse = warehouses.where((row) => (row['id'] as num?)?.toInt() == warehouseId).firstOrNull;
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text('معاينة طباعة $typeLabel'),
+        content: SizedBox(
+          width: 760,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('رقم المستند: ${number.text.trim().isEmpty ? '—' : number.text.trim()}'),
+                Text('التاريخ: ${dateText(inventoryDate)}'),
+                Text('المخزن: ${warehouse?['name'] ?? '—'}'),
+                Text('الحالة: $status'),
+                Text('عدد الأصناف: ${items.length}'),
+                Text('الملاحظات: ${notes.text.trim().isEmpty ? '—' : notes.text.trim()}'),
+                const Divider(height: 24),
+                if (items.isEmpty)
+                  const Text('لا توجد تفاصيل في المستند.')
+                else
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      columns: const [
+                        DataColumn(label: Text('الصنف')),
+                        DataColumn(label: Text('الرصيد الدفتري')),
+                        DataColumn(label: Text('المعدود')),
+                        DataColumn(label: Text('الفرق')),
+                        DataColumn(label: Text('قيمة الفرق')),
+                      ],
+                      rows: items.map((row) {
+                        final product = products.where((p) => (p['id'] as num?)?.toInt() == (row['product_id'] as num?)?.toInt()).firstOrNull;
+                        final difference = n(row['count_qty']) - n(row['book_qty']);
+                        return DataRow(cells: [
+                          DataCell(Text((product?['name'] ?? row['product_id'] ?? '—').toString())),
+                          DataCell(Text(n(row['book_qty']).toStringAsFixed(2))),
+                          DataCell(Text(n(row['count_qty']).toStringAsFixed(2))),
+                          DataCell(Text(difference.toStringAsFixed(2))),
+                          DataCell(Text(n(row['difference_cost']).toStringAsFixed(2))),
+                        ]);
+                      }).toList(),
+                    ),
+                  ),
+                const SizedBox(height: 10),
+                const Text('هذه معاينة للطباعة وليست إرسالًا مباشرًا إلى الطابعة.', style: TextStyle(color: Colors.blueGrey)),
+              ],
+            ),
+          ),
+        ),
+        actions: [FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))],
+      ),
+    );
+  }
+
   Widget build(BuildContext context) {
     final counted = items.where((r) => n(r['count_qty']) != 0).length;
     final differences = items.where((r) => (n(r['count_qty']) - n(r['book_qty'])).abs() > 0.0001).toList();
@@ -359,6 +415,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
         FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
         OutlinedButton.icon(onPressed: busy ? null : _recalculate, icon: const Icon(Icons.calculate_outlined), label: const Text('إعادة الحساب')),
+        OutlinedButton.icon(onPressed: busy ? null : _printPreview, icon: const Icon(Icons.print_outlined), label: const Text('معاينة الطباعة')),
         OutlinedButton.icon(onPressed: busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
         OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
