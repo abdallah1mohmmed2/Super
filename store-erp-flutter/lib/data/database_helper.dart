@@ -847,7 +847,10 @@ class DatabaseHelper {
         await txn.update('inventory', {'qty':(stocks.first['qty'] as num).toDouble()-qty}, where:'id=?', whereArgs:[stocks.first['id']]);
         await _consumeTrackedBatches(txn, productId: productId, warehouseId: warehouseId, qty: qty);
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
-        final cost = (products.first['cost_price'] as num?)?.toDouble() ?? 0;
+        if (products.isEmpty) throw StateError('الصنف غير موجود: $productId');
+        final enteredCost = (line['estimated_cost'] as num?)?.toDouble();
+        final cost = enteredCost ?? ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
+        if (cost < 0) throw StateError('تكلفة التالف لا يمكن أن تكون سالبة');
         totalCost += qty * cost;
       }
       await txn.update('damage_documents', {'status':'مرحل'}, where:'id=?', whereArgs:[documentId]);
