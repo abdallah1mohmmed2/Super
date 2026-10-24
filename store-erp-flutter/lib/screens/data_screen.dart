@@ -211,18 +211,56 @@ class _DataScreenState extends State<DataScreen> {
         ),
       );
     }
+    const dateFields = {
+      'invoice_date',
+      'return_date',
+      'transfer_date',
+      'document_date',
+      'inventory_date',
+    };
+    final isDate = dateFields.contains(field);
     return SizedBox(
       width: width,
       child: TextField(
-        readOnly: widget.screenKey == 'suppliers' && field == 'balance',
+        readOnly: (widget.screenKey == 'suppliers' && field == 'balance') || isDate,
         controller: _controllers[field],
+        keyboardType: _numericFields.contains(field)
+            ? const TextInputType.numberWithOptions(decimal: true, signed: false)
+            : TextInputType.text,
         obscureText: field == 'password_hash' || field == 'confirm_password',
+        onTap: isDate
+            ? () async {
+                final current = DateTime.tryParse(_controllers[field]!.text.trim());
+                final now = DateTime.now();
+                final picked = await showDatePicker(
+                  context: context,
+                  initialDate: current ?? now,
+                  firstDate: DateTime(2000),
+                  lastDate: DateTime(2100),
+                  helpText: 'اختر \${fieldLabel(field)}',
+                  cancelText: 'إلغاء',
+                  confirmText: 'اختيار',
+                );
+                if (picked != null && mounted) {
+                  _controllers[field]!.text =
+                      '\${picked.year.toString().padLeft(4, '0')}-'
+                      '\${picked.month.toString().padLeft(2, '0')}-'
+                      '\${picked.day.toString().padLeft(2, '0')}';
+                  setState(() {});
+                }
+              }
+            : null,
         decoration: InputDecoration(
           labelText: field == 'password_hash' && _selectedId != null
               ? 'كلمة مرور جديدة (اتركها فارغة دون تغيير)'
               : fieldLabel(field),
-          prefixIcon: Icon(_icon(field)),
-          hintText: _numericFields.contains(field) ? 'أدخل رقمًا' : null,
+          prefixIcon: Icon(isDate ? Icons.calendar_month_outlined : _icon(field)),
+          suffixIcon: isDate ? const Icon(Icons.arrow_drop_down) : null,
+          hintText: isDate
+              ? 'YYYY-MM-DD'
+              : _numericFields.contains(field)
+                  ? 'أدخل رقمًا'
+                  : null,
         ),
       ),
     );
