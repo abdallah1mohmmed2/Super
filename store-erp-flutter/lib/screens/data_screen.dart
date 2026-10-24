@@ -432,11 +432,11 @@ class _DataScreenState extends State<DataScreen> {
     super.dispose(); 
   }
 
-  Future<void> _save() async {
-    if (_readOnly) { _message(widget.screenKey == 'inventory' ? 'أرصدة المخزون للعرض فقط؛ عدّلها عبر ترحيل فاتورة أو تحويل أو جرد' : 'هذه الشاشة للعرض فقط؛ نفّذ التعديل من شاشة العمليات المناسبة'); return; }
+  Future<bool> _save() async {
+    if (_readOnly) { _message(widget.screenKey == 'inventory' ? 'أرصدة المخزون للعرض فقط؛ عدّلها عبر ترحيل فاتورة أو تحويل أو جرد' : 'هذه الشاشة للعرض فقط؛ نفّذ التعديل من شاشة العمليات المناسبة'); return false; }
     if (_selectedId != null && ['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) {
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1);
-      if (selected.isNotEmpty && selected.first['status'] == 'مرحل') { _message('لا يمكن تعديل مستند مرحل؛ أنشئ مستندًا عكسيًا بدلًا من ذلك'); return; }
+      if (selected.isNotEmpty && selected.first['status'] == 'مرحل') { _message('لا يمكن تعديل مستند مرحل؛ أنشئ مستندًا عكسيًا بدلًا من ذلك'); return false; }
     }
     final data = <String,Object?>{};
     for (final field in config.fields) {
@@ -446,7 +446,7 @@ class _DataScreenState extends State<DataScreen> {
       if (raw.isEmpty) continue;
       if (_numericFields.contains(field)) {
         final value = num.tryParse(raw);
-        if (value == null) { _message('القيمة في «${fieldLabel(field)}» يجب أن تكون رقمية'); return; }
+        if (value == null) { _message('القيمة في «${fieldLabel(field)}» يجب أن تكون رقمية'); return false; }
         data[field] = value;
       } else { data[field] = raw; }
     }
@@ -456,19 +456,19 @@ class _DataScreenState extends State<DataScreen> {
           ? enteredCashier
           : context.read<AppProvider>().currentUser;
     }
-    if (data.isEmpty) { _message('أدخل بيانات قبل الحفظ'); return; }
+    if (data.isEmpty) { _message('أدخل بيانات قبل الحفظ'); return false; }
     final requiredError = _validateRequired(data);
-    if (requiredError != null) { _message(requiredError); return; }
+    if (requiredError != null) { _message(requiredError); return false; }
     
     if (config.table == 'users' && _selectedId == null && (data['password_hash'] == null || data['password_hash'].toString().isEmpty)) {
-      _message('كلمة المرور مطلوبة للمستخدم الجديد'); return;
+      _message('كلمة المرور مطلوبة للمستخدم الجديد'); return false;
     }
     if (config.table == 'users') {
       final password = _controllers['password_hash']!.text;
       final confirmation = _controllers['confirm_password']!.text;
-      if (password.isNotEmpty && password.length < 6) { _message('يجب ألا تقل كلمة المرور عن 6 أحرف'); return; }
-      if (password.isNotEmpty && password != confirmation) { _message('كلمة المرور وتأكيدها غير متطابقين'); return; }
-      if (_selectedId == null && confirmation.isEmpty) { _message('يرجى تأكيد كلمة المرور'); return; }
+      if (password.isNotEmpty && password.length < 6) { _message('يجب ألا تقل كلمة المرور عن 6 أحرف'); return false; }
+      if (password.isNotEmpty && password != confirmation) { _message('كلمة المرور وتأكيدها غير متطابقين'); return false; }
+      if (_selectedId == null && confirmation.isEmpty) { _message('يرجى تأكيد كلمة المرور'); return false; }
     }
     if (config.table == 'users' && data['password_hash'] != null && data['password_hash'].toString().isNotEmpty) {
       data['password_hash'] = sha256.convert(utf8.encode(data['password_hash'].toString())).toString();
@@ -492,16 +492,25 @@ class _DataScreenState extends State<DataScreen> {
       if (widget.screenKey == 'sales') await _ensureManagerApprovalRequest();
       await _recalculateDraftTotals();
       
-      if (!mounted) return; 
+      if (!mounted) return false; 
       await provider.refresh();
       await _loadReferenceOptions();
       _message('تم الحفظ بنجاح — رقم السجل $_selectedId');
       setState(() {});
+      return true;
     } catch (e) { 
-      _message('تعذر الحفظ: $e'); 
+      _message('تعذر الحفظ: $e');
+      return false;
     } finally { 
       if (mounted) setState(() => _busy = false); 
     }
+  }
+
+  Future<void> _saveAndPost() async {
+    if (!['sales', 'purchases', 'returns'].contains(widget.screenKey)) return;
+    final saved = await _save();
+    if (!saved || !mounted || _selectedId == null) return;
+    await _postSelected();
   }
 
   Future<void> _ensureManagerApprovalRequest() async {
@@ -1282,7 +1291,8 @@ class _DataScreenState extends State<DataScreen> {
             trailing: Wrap(spacing: 8, children: [
               if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
               if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
-              if (['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ وترحيل', icon: Icons.verified_outlined, primary: true, onPressed: _busy ? () {} : _saveAndPost),
+              if (['transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
               if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
