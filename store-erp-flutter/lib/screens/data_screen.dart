@@ -90,6 +90,9 @@ class _DataScreenState extends State<DataScreen> {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
           where = 'is_active=1';
+        } else if (entry.key == 'cash_session_id') {
+          // New sales must use a currently open session; posting validates this again.
+          where = "status='مفتوحة'";
         } else if (entry.key == 'sales_id') {
           where = "status='مرحل'";
         }
