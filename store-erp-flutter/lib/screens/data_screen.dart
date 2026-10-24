@@ -636,6 +636,7 @@ class _DataScreenState extends State<DataScreen> {
     if (_selectedId == null) { _message('احفظ رأس المستند وحدده أولاً'); return; }
     final isSale = widget.screenKey == 'sales';
     final isPurchase = widget.screenKey == 'purchases';
+    final isReturn = widget.screenKey == 'returns';
     final isTransfer = widget.screenKey == 'transfers';
     final isDamage = widget.screenKey == 'damage';
     final isReturn = widget.screenKey == 'returns';
