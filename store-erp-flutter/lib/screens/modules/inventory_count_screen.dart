@@ -199,9 +199,8 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     setState(() => busy = true);
     try {
       if (!await _save()) return;
-      await db.postInventoryCount(documentId: documentId!);
       final posterId = await _currentUserId();
-      await db.update('inventory_documents', {'posted_by': posterId}, where: 'id=? AND status=?', whereArgs: [documentId, 'مرحل']);
+      await db.postInventoryCount(documentId: documentId!, postedBy: posterId);
       if (mounted) setState(() => status = 'مرحل');
       await _loadDocuments();
       msg('تم ترحيل الجرد وتحديث أرصدة المخزون والقيود المحاسبية');
