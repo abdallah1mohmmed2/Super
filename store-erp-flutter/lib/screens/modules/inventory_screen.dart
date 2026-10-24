@@ -57,11 +57,19 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   }
 
   List<Map<String,Object?>> get stockRows => inventory.where((r) => matches(r)).toList();
-  List<Map<String,Object?>> get lowRows => stockRows.where((r) {
-    final level = reorder.where((x) => x['product_id']==r['product_id'] && x['warehouse_id']==r['warehouse_id']);
-    final minimum = level.isEmpty ? 0.0 : numv(level.first['minimum']);
-    return numv(r['qty']) <= minimum;
-  }).toList();
+  List<Map<String,Object?>> get lowRows {
+    final rows = <Map<String, Object?>>[];
+    for (final level in reorderRows) {
+      final stock = inventory.where((row) =>
+        row['product_id'] == level['product_id'] &&
+        row['warehouse_id'] == level['warehouse_id']);
+      final qty = stock.isEmpty ? 0.0 : numv(stock.first['qty']);
+      if (qty <= numv(level['minimum'])) {
+        rows.add({...level, 'qty': qty});
+      }
+    }
+    return rows;
+  }
   List<Map<String,Object?>> get reorderRows => reorder.where((r) => matches(r)).toList();
   List<Map<String,Object?>> get expiredRows => batches.where((r) => matches(r,batch:true) && DateTime.tryParse((r['expiry_date']??'').toString())?.isBefore(DateTime.now()) == true).toList();
   List<Map<String,Object?>> get expiringRows => batches.where((r) {
@@ -82,6 +90,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:warehouseId,decoration:const InputDecoration(labelText:'المخزن'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...warehouses.map((w)=>DropdownMenuItem(value:(w['id'] as num).toInt(),child:Text('${w['name']}')))],onChanged:(v)=>setState(()=>warehouseId=v))),
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:categoryId,decoration:const InputDecoration(labelText:'القسم'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل الأقسام')),...categories.map((c)=>DropdownMenuItem(value:(c['id'] as num).toInt(),child:Text('${c['name']}')))],onChanged:(v)=>setState(()=>categoryId=v))),
       SizedBox(width:300,child:TextField(controller:search,decoration:const InputDecoration(labelText:'بحث بالاسم أو الكود أو الدفعة',prefixIcon:Icon(Icons.search)),onChanged:(v)=>setState(()=>filter=v.trim()))),
+      FilledButton.tonalIcon(onPressed:loading?null:reload,icon:const Icon(Icons.search),label:const Text('عرض')),
       OutlinedButton(onPressed:()=>setState(() { filter=''; warehouseId=null; categoryId=null; search.clear(); }),child:const Text('مسح الفلاتر')),
     ]))),
     Wrap(spacing:8,runSpacing:8,children:[
