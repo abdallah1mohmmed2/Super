@@ -3,6 +3,7 @@ import 'package:excel/excel.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import '../../data/database_helper.dart';
 
 class InventoryScreen extends StatefulWidget {
@@ -75,7 +76,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   Widget metric(String title,String value,IconData icon) => SizedBox(width:220,child:Card(child:ListTile(leading:Icon(icon),title:Text(title),subtitle:Text(value,style:const TextStyle(fontSize:19,fontWeight:FontWeight.bold)))));
   @override
   Widget build(BuildContext context) => ListView(padding:const EdgeInsets.all(18),children:[
-    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),FilledButton.icon(onPressed:exportCurrentTab,icon:const Icon(Icons.file_download_outlined),label:const Text('تصدير Excel (.xlsx)')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>Navigator.maybePop(context),icon:const Icon(Icons.close),label:const Text('إغلاق'))]),
+    Row(children:[const Expanded(child:Text('إدارة المخزون',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),OutlinedButton.icon(onPressed:loading?null:reload,icon:const Icon(Icons.refresh),label:const Text('تحديث')),const SizedBox(width:8),FilledButton.icon(onPressed:exportCurrentTab,icon:const Icon(Icons.file_download_outlined),label:const Text('تصدير Excel (.xlsx)')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>showPrintPreview(),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),const SizedBox(width:8),OutlinedButton.icon(onPressed:()=>closeModule(context),icon:const Icon(Icons.close),label:const Text('إغلاق'))]),
     const SizedBox(height:12),
     Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:12,runSpacing:12,children:[
       SizedBox(width:240,child:DropdownButtonFormField<int>(value:warehouseId,decoration:const InputDecoration(labelText:'المخزن'),items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...warehouses.map((w)=>DropdownMenuItem(value:(w['id'] as num).toInt(),child:Text('${w['name']}')))],onChanged:(v)=>setState(()=>warehouseId=v))),
