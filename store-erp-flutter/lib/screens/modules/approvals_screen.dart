@@ -58,7 +58,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         .split(',')
         .map((role) => role.trim().toLowerCase())
         .toSet();
-    if (!roles.any((role) => ['مدير', 'مدير نظام', 'admin', 'administrator'].contains(role))) {
+    if (!roles.any((role) => ['مدير', 'مدير نظام', 'مدير النظام', 'مسؤول النظام', 'admin', 'administrator'].contains(role))) {
       _message('صلاحية اعتماد أو رفض الطلبات متاحة للمدير فقط');
       return;
     }
@@ -122,7 +122,7 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         .split(',')
         .map((role) => role.trim().toLowerCase())
         .toSet();
-    final canDecide = roles.any((role) => ['مدير', 'مدير نظام', 'admin', 'administrator'].contains(role));
+    final canDecide = roles.any((role) => ['مدير', 'مدير نظام', 'مدير النظام', 'مسؤول النظام', 'admin', 'administrator'].contains(role));
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
         const Expanded(child: Text('اعتمادات المدير', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
