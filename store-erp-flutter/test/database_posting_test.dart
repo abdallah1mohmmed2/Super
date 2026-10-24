@@ -490,4 +490,121 @@ void main() {
     );
   });
 
+
+  test('card and bank invoice payments do not change the cash-box balance',
+      () async {
+    final db = await helper.database;
+    final productId = await createProduct(cost: 4, price: 10);
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 10,
+    });
+    final sessionId = await createOpenSession();
+    final saleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-CARD-SALE-1',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': sessionId,
+      'cashier': 'test',
+      'payment_method': 'بطاقة',
+      'net': 10,
+      'paid': 10,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': saleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 1,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 10,
+    });
+    await helper.postSale(
+      saleId: saleId,
+      warehouseId: 1,
+      cashBoxId: 1,
+      lines: [
+        {'product_id': productId, 'qty': 1.0, 'factor': 1.0},
+      ],
+      net: 10,
+      paid: 10,
+    );
+
+    final supplierId = await db.insert('suppliers', {'name': 'مورد تحويل'});
+    final purchaseId = await db.insert('purchases_header', {
+      'invoice_no': 'TEST-BANK-PURCHASE-1',
+      'invoice_date': today(),
+      'supplier_id': supplierId,
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'payment_method': 'تحويل بنكي',
+      'net': 10,
+      'paid': 10,
+      'status': 'مسودة',
+    });
+    await db.insert('purchases_lines', {
+      'purchase_id': purchaseId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 1,
+      'cost': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 10,
+    });
+    await helper.postPurchase(
+      purchaseId: purchaseId,
+      warehouseId: 1,
+      cashBoxId: 1,
+      supplierId: supplierId,
+      net: 10,
+      paid: 10,
+      lines: [
+        {'product_id': productId, 'qty': 1, 'factor': 1, 'cost': 10},
+      ],
+    );
+
+    final cashBoxes = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    final saleEntries = await helper.query(
+      'accounting_entries',
+      where: 'source_type=? AND source_id=?',
+      whereArgs: ['SALE', saleId],
+    );
+    final saleLines = await helper.query(
+      'accounting_entry_lines',
+      where: 'entry_id=?',
+      whereArgs: [saleEntries.single['id']],
+    );
+    final purchaseEntries = await helper.query(
+      'accounting_entries',
+      where: 'source_type=? AND source_id=?',
+      whereArgs: ['PURCHASE', purchaseId],
+    );
+    final purchaseJournalLines = await helper.query(
+      'accounting_entry_lines',
+      where: 'entry_id=?',
+      whereArgs: [purchaseEntries.single['id']],
+    );
+
+    expect((cashBoxes.single['balance'] as num).toDouble(), 0);
+    expect(
+      saleLines.where((line) => line['account_code'] == '1020').single['debit'],
+      10,
+    );
+    expect(
+      purchaseJournalLines
+          .where((line) => line['account_code'] == '1020')
+          .single['credit'],
+      10,
+    );
+    await expectJournalBalanced('SALE', saleId);
+    await expectJournalBalanced('PURCHASE', purchaseId);
+  });
+
 }
