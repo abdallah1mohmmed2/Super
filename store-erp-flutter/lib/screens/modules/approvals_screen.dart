@@ -54,6 +54,14 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   }
 
   Future<void> _decide(bool approve) async {
+    final roles = context.read<AppProvider>().currentRoles
+        .split(',')
+        .map((role) => role.trim().toLowerCase())
+        .toSet();
+    if (!roles.any((role) => ['مدير', 'مدير نظام', 'admin', 'administrator'].contains(role))) {
+      _message('صلاحية اعتماد أو رفض الطلبات متاحة للمدير فقط');
+      return;
+    }
     final row = _selected;
     if (row == null) { _message('حدد طلبًا معلقًا أولًا'); return; }
     final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -110,6 +118,11 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
   @override
   Widget build(BuildContext context) {
     final row = _selected;
+    final roles = context.watch<AppProvider>().currentRoles
+        .split(',')
+        .map((role) => role.trim().toLowerCase())
+        .toSet();
+    final canDecide = roles.any((role) => ['مدير', 'مدير نظام', 'admin', 'administrator'].contains(role));
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
         const Expanded(child: Text('اعتمادات المدير', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
@@ -117,6 +130,10 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
         const SizedBox(width: 8),
         OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]),
+      if (!canDecide) const Padding(
+        padding: EdgeInsets.only(top: 8),
+        child: Text('عرض فقط: صلاحية الاعتماد والرفض متاحة للمدير أو مدير النظام.', style: TextStyle(color: Colors.deepOrange)),
+      ),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(flex: 6, child: Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -148,8 +165,8 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
             TextField(controller: _decisionNotes, minLines: 2, maxLines: 4, decoration: const InputDecoration(labelText: 'ملاحظات القرار', alignLabelWithHint: true, border: OutlineInputBorder())),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
-              FilledButton.icon(onPressed: _busy ? null : () => _decide(true), icon: const Icon(Icons.check_circle_outline), label: const Text('اعتماد')),
-              FilledButton.tonalIcon(onPressed: _busy ? null : () => _decide(false), icon: const Icon(Icons.cancel_outlined), label: const Text('رفض')),
+              FilledButton.icon(onPressed: _busy || !canDecide || row['status'] != 'معلق' ? null : () => _decide(true), icon: const Icon(Icons.check_circle_outline), label: const Text('اعتماد')),
+              FilledButton.tonalIcon(onPressed: _busy || !canDecide || row['status'] != 'معلق' ? null : () => _decide(false), icon: const Icon(Icons.cancel_outlined), label: const Text('رفض')),
             ]),
           ],
         ])))),
