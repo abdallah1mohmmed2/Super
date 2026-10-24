@@ -14,3 +14,31 @@ class ActionButton extends StatelessWidget {
 class StatCard extends StatelessWidget { final String title,value; final IconData icon; final Color color; const StatCard({super.key,required this.title,required this.value,required this.icon,required this.color});
  @override Widget build(BuildContext context)=>Card(child:Padding(padding:const EdgeInsets.all(16),child:Row(children:[Container(padding:const EdgeInsets.all(12),decoration:BoxDecoration(color:color.withValues(alpha:.12),borderRadius:BorderRadius.circular(12)),child:Icon(icon,color:color)),const SizedBox(width:12),Expanded(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text(title,style:TextStyle(color:Colors.blueGrey.shade600)),const SizedBox(height:6),Text(value,style:const TextStyle(fontWeight:FontWeight.bold,fontSize:22))]))])));
 }
+
+
+/// Supplies a real close action to modules rendered inside the main shell.
+class ModuleNavigationScope extends InheritedWidget {
+  final VoidCallback onClose;
+
+  const ModuleNavigationScope({
+    super.key,
+    required this.onClose,
+    required super.child,
+  });
+
+  static ModuleNavigationScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<ModuleNavigationScope>();
+
+  @override
+  bool updateShouldNotify(ModuleNavigationScope oldWidget) =>
+      onClose != oldWidget.onClose;
+}
+
+void closeModule(BuildContext context) {
+  final scope = ModuleNavigationScope.maybeOf(context);
+  if (scope != null) {
+    scope.onClose();
+  } else {
+    Navigator.maybePop(context);
+  }
+}
