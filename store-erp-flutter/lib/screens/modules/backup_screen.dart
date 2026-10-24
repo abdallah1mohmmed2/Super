@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -30,11 +31,19 @@ class _BackupScreenState extends State<BackupScreen> {
   double? _progress;
   String _status = 'جاهز';
   String? _settingsPath;
+  Timer? _dailyTimer;
+  String? _lastDailyRun;
+  bool _settingsSaved = false;
 
   @override
-  void initState() { super.initState(); _initialize(); }
+  void initState() {
+    super.initState();
+    _initialize();
+    // Runs only while this screen/app isolate is alive; it is not an OS background task.
+    _dailyTimer = Timer.periodic(const Duration(seconds: 30), (_) => _checkDailyBackup());
+  }
   @override
-  void dispose() { _folder.dispose(); _filename.dispose(); _restorePath.dispose(); _time.dispose(); super.dispose(); }
+  void dispose() { _dailyTimer?.cancel(); _folder.dispose(); _filename.dispose(); _restorePath.dispose(); _time.dispose(); super.dispose(); }
 
   void _message(String value) {
     if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value)));
@@ -57,6 +66,8 @@ class _BackupScreenState extends State<BackupScreen> {
       _verifyDaily = s['verifyDaily'] as bool? ?? true;
       _copyOnlyDaily = s['copyOnlyDaily'] as bool? ?? true;
       _safetyBackup = s['safetyBackup'] as bool? ?? true;
+      _lastDailyRun = s['lastDailyRun']?.toString();
+      _settingsSaved = true;
     } catch (_) {}
     if (mounted) setState(() {});
     await _reloadHistory();
@@ -69,19 +80,52 @@ class _BackupScreenState extends State<BackupScreen> {
     } catch (e) { _message('تعذر تحميل فهرس النسخ: $e'); }
   }
 
+  Map<String, Object?> _settingsData() => {
+    'folder': _folder.text.trim(), 'filename': _filename.text.trim(), 'time': _time.text.trim(),
+    'copyOnly': _copyOnly, 'verify': _verify, 'daily': _daily,
+    'verifyDaily': _verifyDaily, 'copyOnlyDaily': _copyOnlyDaily, 'safetyBackup': _safetyBackup,
+    'lastDailyRun': _lastDailyRun,
+  };
+
+  Future<void> _persistSettings() async {
+    final path = _settingsPath;
+    if (path == null) throw StateError('إعدادات النسخ لم تجهز بعد');
+    await File(path).writeAsString(jsonEncode(_settingsData()));
+    _settingsSaved = true;
+  }
+
   Future<void> _saveSettings() async {
     final time = _time.text.trim();
     if (!RegExp(r'^([01]\d|2[0-3]):[0-5]\d$').hasMatch(time)) {
       _message('أدخل وقتًا صحيحًا بصيغة HH:MM'); return;
     }
+    if (_folder.text.trim().isEmpty || _filename.text.trim().isEmpty) {
+      _message('حدد مجلد الحفظ واسم الملف أولًا'); return;
+    }
     try {
-      await File(_settingsPath!).writeAsString(jsonEncode({
-        'folder': _folder.text.trim(), 'filename': _filename.text.trim(), 'time': time,
-        'copyOnly': _copyOnly, 'verify': _verify, 'daily': _daily,
-        'verifyDaily': _verifyDaily, 'copyOnlyDaily': _copyOnlyDaily, 'safetyBackup': _safetyBackup,
-      }));
-      _message('حُفظت الإعدادات محليًا. ينفّذ التطبيق النسخ اليومي مرة واحدة بعد الوقت المحدد ما دام التطبيق مفتوحًا؛ لا يعمل بعد إغلاق التطبيق.');
+      await _persistSettings();
+      _message('حُفظت الإعدادات. النسخ اليومي يعمل عند بقاء التطبيق مفتوحًا وشاشة النسخ الاحتياطي نشطة؛ لا يعمل بعد إغلاق التطبيق.');
+      await _checkDailyBackup();
     } catch (e) { _message('تعذر حفظ الإعدادات: $e'); }
+  }
+
+  Future<void> _checkDailyBackup() async {
+    if (!mounted || !_settingsSaved || !_daily || _busy || _settingsPath == null) return;
+    final match = RegExp(r'^([01]\d|2[0-3]):([0-5]\d)$').firstMatch(_time.text.trim());
+    if (match == null) return;
+    final now = DateTime.now();
+    final scheduled = DateTime(now.year, now.month, now.day, int.parse(match.group(1)!), int.parse(match.group(2)!));
+    final today = now.toIso8601String().substring(0, 10);
+    if (now.isBefore(scheduled) || _lastDailyRun == today) return;
+    final created = await _createBackup(verifyOverride: _verifyDaily);
+    if (!created || !mounted) return;
+    _lastDailyRun = today;
+    try {
+      await _persistSettings();
+      if (mounted) setState(() => _status = 'اكتملت النسخة اليومية: $today');
+    } catch (e) {
+      _message('تم إنشاء النسخة اليومية، لكن تعذر حفظ تاريخ التنفيذ: $e');
+    }
   }
 
   Future<void> _browseFolder() async {
@@ -98,7 +142,7 @@ class _BackupScreenState extends State<BackupScreen> {
     if (path != null && mounted) setState(() => _restorePath.text = path);
   }
 
-  Future<bool> _createBackup({bool safety = false}) async {
+  Future<bool> _createBackup({bool safety = false, bool? verifyOverride}) async {
     if (_busy) return false;
     final directoryPath = _folder.text.trim();
     final rawName = _filename.text.trim();
@@ -116,7 +160,7 @@ class _BackupScreenState extends State<BackupScreen> {
       setState(() { _progress = 0.45; _status = 'نسخ قاعدة البيانات...'; });
       final target = await source.copy(p.join(directory.path, name));
       setState(() { _progress = 0.8; _status = 'التحقق من الملف...'; });
-      if (_verify || safety) {
+      if (_verify || verifyOverride == true || safety) {
         await _db.verifyDatabaseFile(target.path);
       }
       await _db.insert('backup_history', {'file_path': target.path, 'status': 'نجاح'});
