@@ -270,15 +270,23 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
     final box = _selectedBox;
     final session = _activeSession;
     final expected = session == null ? null : (session['opening_balance'] as num?)?.toDouble();
-    final incoming = _transactions.fold<double>(0, (sum, row) {
+    final sessionTransactions = session == null
+        ? _transactions
+        : _transactions.where((row) {
+            final openedAt = DateTime.tryParse((session['opened_at'] ?? '').toString());
+            final transactionAt = DateTime.tryParse((row['transaction_date'] ?? '').toString());
+            return openedAt != null && transactionAt != null && !transactionAt.isBefore(openedAt);
+          }).toList();
+    final incoming = sessionTransactions.fold<double>(0, (sum, row) {
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
       return sum + (amount > 0 ? amount : 0);
     });
-    final outgoing = _transactions.fold<double>(0, (sum, row) {
+    final outgoing = sessionTransactions.fold<double>(0, (sum, row) {
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
       return sum + (amount < 0 ? amount.abs() : 0);
     });
     final net = incoming - outgoing;
+    final systemBalance = expected == null ? null : expected + net;
     return ListView(padding: const EdgeInsets.all(18), children: [
       Row(children: [
         const Expanded(child: Text('إدارة الصناديق وإقفال الجلسة', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
@@ -316,10 +324,11 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       ]))),
       const SizedBox(height: 12),
       Wrap(spacing: 10, runSpacing: 10, children: [
+        if (systemBalance != null) _summaryCard('الرصيد النظامي', _money(systemBalance), Icons.calculate_outlined, Colors.blueGrey),
         _summaryCard('الداخل', _money(incoming), Icons.south_west, Colors.green),
         _summaryCard('الخارج', _money(outgoing), Icons.north_east, Colors.red),
         _summaryCard('الصافي', _money(net), Icons.account_balance_wallet_outlined, net < 0 ? Colors.red : Colors.blue),
-        _summaryCard('عدد الحركات', _transactions.length.toString(), Icons.receipt_long_outlined, Colors.blueGrey),
+        _summaryCard('عدد الحركات', sessionTransactions.length.toString(), Icons.receipt_long_outlined, Colors.blueGrey),
       ]),
       const SizedBox(height: 8),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
