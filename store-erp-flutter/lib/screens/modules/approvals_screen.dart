@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/database_helper.dart';
@@ -113,6 +114,8 @@ class _ApprovalsScreenState extends State<ApprovalsScreen> {
       Row(children: [
         const Expanded(child: Text('اعتمادات المدير', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold))),
         OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]),
       const SizedBox(height: 12),
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
