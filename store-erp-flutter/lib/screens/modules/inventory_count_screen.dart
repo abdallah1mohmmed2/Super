@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:provider/provider.dart';
 import '../../data/database_helper.dart';
 import '../../providers/app_provider.dart';
@@ -359,7 +360,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
         OutlinedButton.icon(onPressed: busy ? null : _recalculate, icon: const Icon(Icons.calculate_outlined), label: const Text('إعادة الحساب')),
         OutlinedButton.icon(onPressed: busy ? null : _loadDocuments, icon: const Icon(Icons.list_alt), label: const Text('مستندات الجرد')),
-        OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
+        OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]))),
       if (busy) const LinearProgressIndicator(),
       Text('ملخص الفرق: زيادة $increase • عجز $decrease • صافي قيمة الفرق ${diffValue.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
