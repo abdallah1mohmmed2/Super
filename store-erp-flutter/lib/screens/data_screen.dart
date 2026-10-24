@@ -37,7 +37,7 @@ class _DataScreenState extends State<DataScreen> {
   
   ScreenConfig get config => screenConfigs[widget.screenKey] ?? screenConfigs['products']!;
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
-  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
+  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','cash_session_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
   bool _referencesLoading = true;
@@ -56,6 +56,7 @@ class _DataScreenState extends State<DataScreen> {
     'product_id': ('products', 'name'),
     'warehouse_id': ('warehouses', 'name'),
     'cash_box_id': ('cash_boxes', 'name'),
+    'cash_session_id': ('cash_sessions', 'session_no'),
     'customer_id': ('customers', 'name'),
     'supplier_id': ('suppliers', 'name'),
     'sales_id': ('sales_header', 'invoice_no'),
@@ -82,7 +83,9 @@ class _DataScreenState extends State<DataScreen> {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
         String? where;
-        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+        if (entry.key == 'cash_session_id') {
+          where = "status='مفتوحة'";
+        } else if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
@@ -111,6 +114,23 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'cashier' && widget.screenKey == 'sales') {
+      final savedCashier = _controllers[field]!.text.trim();
+      final cashier = savedCashier.isNotEmpty
+          ? savedCashier
+          : context.watch<AppProvider>().currentUser;
+      return SizedBox(
+        width: width,
+        child: InputDecorator(
+          decoration: const InputDecoration(
+            labelText: 'الكاشير',
+            prefixIcon: Icon(Icons.person_outline),
+            border: OutlineInputBorder(),
+          ),
+          child: Text(cashier.isEmpty ? '—' : cashier),
+        ),
+      );
+    }
     if (field == 'roles') {
       const roles = ['مدير نظام', 'مدير', 'محاسب', 'كاشير', 'مخزن'];
       final selected = _controllers[field]!.text
@@ -206,6 +226,13 @@ class _DataScreenState extends State<DataScreen> {
               ? null
               : (value) {
                   _controllers[field]!.text = value?.toString() ?? '';
+                  if (field == 'cash_session_id' && value != null &&
+                      _controllers.containsKey('cash_box_id')) {
+                    final sessions = options.where((row) => (row['id'] as num?)?.toInt() == value);
+                    if (sessions.isNotEmpty) {
+                      _controllers['cash_box_id']!.text = (sessions.first['cash_box_id'] ?? '').toString();
+                    }
+                  }
                   setState(() {});
                 },
         ),
@@ -390,6 +417,12 @@ class _DataScreenState extends State<DataScreen> {
         if (value == null) { _message('القيمة في «${fieldLabel(field)}» يجب أن تكون رقمية'); return; }
         data[field] = value;
       } else { data[field] = raw; }
+    }
+    if (widget.screenKey == 'sales' && _controllers.containsKey('cashier')) {
+      final enteredCashier = _controllers['cashier']!.text.trim();
+      data['cashier'] = enteredCashier.isNotEmpty
+          ? enteredCashier
+          : context.read<AppProvider>().currentUser;
     }
     if (data.isEmpty) { _message('أدخل بيانات قبل الحفظ'); return; }
     final requiredError = _validateRequired(data);
@@ -689,8 +722,8 @@ class _DataScreenState extends State<DataScreen> {
             }
           }
         }
-        if (header['warehouse_id'] == null || header['cash_box_id'] == null) {
-          throw StateError('حدد المخزن والصندوق في رأس فاتورة المبيعات قبل الترحيل');
+        if (header['warehouse_id'] == null || header['cash_box_id'] == null || header['cash_session_id'] == null) {
+          throw StateError('حدد المخزن والصندوق وجلسة البيع المفتوحة قبل ترحيل الفاتورة');
         }
         final lines = await db.query('sales_lines', where:'sales_id=?', whereArgs:[_selectedId]);
         await db.postSale(saleId:_selectedId!, warehouseId:(header['warehouse_id'] as num?)?.toInt() ?? 1, cashBoxId:(header['cash_box_id'] as num?)?.toInt() ?? 1, customerId:(header['customer_id'] as num?)?.toInt(), net:(header['net'] as num?)?.toDouble() ?? 0, paid:(header['paid'] as num?)?.toDouble() ?? 0, lines:lines.map((r)=>{'product_id':(r['product_id'] as num).toDouble(),'qty':(r['qty'] as num).toDouble(),'factor':((r['factor'] as num?)?.toDouble() ?? 1)}).toList());
