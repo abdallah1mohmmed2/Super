@@ -46,6 +46,13 @@ class DashboardScreen extends StatelessWidget {
             _dashboardCard(context, 'تنبيهات انتهاء الدفعات', Icons.event_busy_outlined, () => onOpen('inventory'), '${data.expiredBatchCount} دفعة منتهية'),
             _dashboardCard(context, 'الجرد والمستندات', Icons.fact_check, () => onOpen('countdocs'), 'فتح مستندات الجرد'),
           ]),
+          const SizedBox(height: 18),
+          _indicatorTable('الأقسام الأكثر مبيعًا', data.topCategories, 'القسم'),
+          _indicatorTable('الأقسام الأقل مبيعًا', data.bottomCategories, 'القسم'),
+          _indicatorTable('المنتجات الأكثر مبيعًا', data.topProducts, 'الصنف'),
+          _indicatorTable('المنتجات الأقل مبيعًا', data.bottomProducts, 'الصنف'),
+          _indicatorTable('تنبيهات قرب النفاد', data.lowStockAlerts, 'الصنف'),
+          _indicatorTable('تنبيهات قرب الانتهاء', data.nearExpiryAlerts, 'الصنف'),
           if (snapshot.hasError) Padding(padding: const EdgeInsets.only(top: 12), child: Text('تعذر تحديث بعض المؤشرات: ${snapshot.error}', style: const TextStyle(color: Colors.red))),
         ]);
       },
@@ -61,6 +68,9 @@ class DashboardScreen extends StatelessWidget {
     final customers = await db.query('customers');
     final reorder = await db.query('reorder_levels');
     final batches = await db.query('product_batches');
+    final warehouses = await db.query('warehouses');
+    final salesLines = await db.query('sales_lines');
+    final categories = await db.query('categories');
     final approvals = await db.query('approval_requests', where: 'status=?', whereArgs: ['معلق']);
     final today = DateTime.now().toIso8601String().substring(0, 10);
     double sum(List<Map<String,Object?>> rows, String field) => rows.fold<double>(0, (total, row) => total + ((row[field] as num?)?.toDouble() ?? 0));
@@ -74,6 +84,72 @@ class DashboardScreen extends StatelessWidget {
       final expiry = DateTime.tryParse((r['expiry_date'] ?? '').toString());
       return qty > 0 && expiry != null && expiry.isBefore(DateTime.now());
     }).length;
+    final postedSaleIds = sales.where((row) => row['status'] == 'مرحل')
+        .map((row) => (row['id'] as num?)?.toInt()).whereType<int>().toSet();
+    final productQty = <int, double>{};
+    final categoryQty = <int, double>{};
+    final productById = <int, Map<String, Object?>>{
+      for (final product in products)
+        if (product['id'] is num) (product['id'] as num).toInt(): product,
+    };
+    final categoryById = <int, Map<String, Object?>>{
+      for (final category in categories)
+        if (category['id'] is num) (category['id'] as num).toInt(): category,
+    };
+    for (final line in salesLines) {
+      final saleId = (line['sales_id'] as num?)?.toInt();
+      final productId = (line['product_id'] as num?)?.toInt();
+      if (saleId == null || productId == null || !postedSaleIds.contains(saleId)) continue;
+      final qty = ((line['qty'] as num?)?.toDouble() ?? 0) *
+          ((line['factor'] as num?)?.toDouble() ?? 1);
+      productQty[productId] = (productQty[productId] ?? 0) + qty;
+      final categoryId = (productById[productId]?['category_id'] as num?)?.toInt();
+      if (categoryId != null) categoryQty[categoryId] = (categoryQty[categoryId] ?? 0) + qty;
+    }
+    List<Map<String, Object?>> ranked(Map<int, double> values, Map<int, Map<String, Object?>> source, String label) {
+      final rows = values.entries.where((entry) => entry.value > 0 && source.containsKey(entry.key))
+          .map((entry) => <String, Object?>{'name': source[entry.key]?[label] ?? '—', 'qty': entry.value})
+          .toList();
+      rows.sort((a, b) => ((b['qty'] as num).toDouble()).compareTo((a['qty'] as num).toDouble()));
+      return rows;
+    }
+    final productsRanked = ranked(productQty, productById, 'name');
+    final categoriesRanked = ranked(categoryQty, categoryById, 'name');
+    final lowStockAlerts = reorder.where((row) {
+      final qty = qtyFor(row['product_id'], row['warehouse_id']);
+      return qty <= ((row['minimum'] as num?)?.toDouble() ?? 0);
+    }).map((row) {
+      final product = productById[(row['product_id'] as num?)?.toInt()];
+      final warehouse = warehouses.where((w) => w['id'] == row['warehouse_id']);
+      return <String, Object?>{
+        'name': product?['name'] ?? 'صنف غير معروف',
+        'warehouse': warehouse.isEmpty ? '—' : (warehouse.first['name'] ?? '—'),
+        'qty': qtyFor(row['product_id'], row['warehouse_id']),
+        'minimum': (row['minimum'] as num?)?.toDouble() ?? 0,
+      };
+    }).take(10).toList();
+    final todayDate = DateTime.now();
+    final nearExpiryAlerts = batches.where((row) {
+      final qty = (row['qty'] as num?)?.toDouble() ?? 0;
+      final expiry = DateTime.tryParse((row['expiry_date'] ?? '').toString());
+      if (qty <= 0 || expiry == null) return false;
+      final days = expiry.difference(DateTime(todayDate.year, todayDate.month, todayDate.day)).inDays;
+      return days >= 0 && days <= 30;
+    }).toList()
+      ..sort((a, b) => (DateTime.tryParse((a['expiry_date'] ?? '').toString()) ?? DateTime(9999))
+          .compareTo(DateTime.tryParse((b['expiry_date'] ?? '').toString()) ?? DateTime(9999)));
+    final nearExpiryRows = nearExpiryAlerts.take(10).map((row) {
+      final product = productById[(row['product_id'] as num?)?.toInt()];
+      final warehouse = warehouses.where((w) => w['id'] == row['warehouse_id']);
+      return <String, Object?>{
+        'name': product?['name'] ?? 'صنف غير معروف',
+        'warehouse': warehouse.isEmpty ? '—' : (warehouse.first['name'] ?? '—'),
+        'qty': (row['qty'] as num?)?.toDouble() ?? 0,
+        'expiry': (row['expiry_date'] ?? '—').toString(),
+      };
+    }).toList();
+    final bottomProducts = productsRanked.reversed.take(5).toList();
+    final bottomCategories = categoriesRanked.reversed.take(5).toList();
     return _DashboardData(
       todaySales: sum(sales.where((r) => (r['invoice_date']?.toString() ?? '').startsWith(today) && r['status'] == 'مرحل').toList(), 'net'),
       purchaseTotal: sum(purchases.where((r) => r['status'] == 'مرحل').toList(), 'net'),
@@ -81,15 +157,64 @@ class DashboardScreen extends StatelessWidget {
       customerBalances: sum(customers, 'balance'), salesCount: sales.length, purchaseCount: purchases.length,
       productCount: products.length, customerCount: customers.length,
       lowStockCount: lowStockCount, pendingApprovals: approvals.length, expiredBatchCount: expiredBatchCount,
+      topProducts: productsRanked.take(5).toList(),
+      bottomProducts: bottomProducts,
+      topCategories: categoriesRanked.take(5).toList(),
+      bottomCategories: bottomCategories,
+      lowStockAlerts: lowStockAlerts,
+      nearExpiryAlerts: nearExpiryRows,
     );
   }
   String _money(double value) => value.toStringAsFixed(2);
+
+  Widget _indicatorTable(String title, List<Map<String, Object?>> rows, String firstColumn) {
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          if (rows.isEmpty)
+            const Text('لا توجد بيانات مطابقة حاليًا', style: TextStyle(color: Colors.blueGrey))
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: [
+                  DataColumn(label: Text(firstColumn)),
+                  if (rows.first.containsKey('warehouse')) const DataColumn(label: Text('المخزن')),
+                  if (rows.first.containsKey('qty')) const DataColumn(label: Text('الكمية')),
+                  if (rows.first.containsKey('minimum')) const DataColumn(label: Text('حد إعادة الطلب')),
+                  if (rows.first.containsKey('expiry')) const DataColumn(label: Text('تاريخ الانتهاء')),
+                ],
+                rows: rows.map((row) => DataRow(cells: [
+                  DataCell(Text((row['name'] ?? '—').toString())),
+                  if (row.containsKey('warehouse')) DataCell(Text((row['warehouse'] ?? '—').toString())),
+                  if (row.containsKey('qty')) DataCell(Text(((row['qty'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                  if (row.containsKey('minimum')) DataCell(Text(((row['minimum'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                  if (row.containsKey('expiry')) DataCell(Text((row['expiry'] ?? '—').toString())),
+                ])).toList(),
+              ),
+            ),
+        ]),
+      ),
+    );
+  }
+
   Widget _dashboardCard(BuildContext context, String title, IconData icon, VoidCallback onTap, String detail) => Card(child: InkWell(borderRadius: BorderRadius.circular(14), onTap: onTap, child: Padding(padding: const EdgeInsets.all(18), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [Row(children: [Icon(icon, color: AppTheme.emerald), const SizedBox(width: 10), Expanded(child: Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)))]), const Divider(height: 28), Expanded(child: Center(child: Text(detail, style: const TextStyle(color: Colors.blueGrey, fontSize: 16)))), Align(alignment: Alignment.centerLeft, child: TextButton(onPressed: onTap, child: const Text('عرض التفاصيل')))]))));
 }
 
 class _DashboardData {
   final double todaySales, purchaseTotal, stockValue, customerBalances;
   final int salesCount, purchaseCount, productCount, customerCount, lowStockCount, pendingApprovals, expiredBatchCount;
-  const _DashboardData({this.todaySales=0,this.purchaseTotal=0,this.stockValue=0,this.customerBalances=0,this.salesCount=0,this.purchaseCount=0,this.productCount=0,this.customerCount=0,this.lowStockCount=0,this.pendingApprovals=0,this.expiredBatchCount=0});
+  final List<Map<String, Object?>> topProducts, bottomProducts, topCategories, bottomCategories, lowStockAlerts, nearExpiryAlerts;
+  const _DashboardData({
+    this.todaySales=0, this.purchaseTotal=0, this.stockValue=0, this.customerBalances=0,
+    this.salesCount=0, this.purchaseCount=0, this.productCount=0, this.customerCount=0,
+    this.lowStockCount=0, this.pendingApprovals=0, this.expiredBatchCount=0,
+    this.topProducts=const [], this.bottomProducts=const [], this.topCategories=const [], this.bottomCategories=const [],
+    this.lowStockAlerts=const [], this.nearExpiryAlerts=const [],
+  });
   factory _DashboardData.empty() => const _DashboardData();
 }
