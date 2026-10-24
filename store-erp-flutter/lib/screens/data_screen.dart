@@ -1164,6 +1164,33 @@ class _DataScreenState extends State<DataScreen> {
     if (widget.screenKey == 'backup') _restorePathController.text = (row['file_path'] ?? '').toString();
   }
   
+  Future<void> _openSelected() async {
+    if (_selectedId == null) {
+      _message('حدد مستندًا من الجدول أولًا');
+      return;
+    }
+    try {
+      final rows = await DatabaseHelper.instance.query(
+        config.table,
+        where: 'id=?',
+        whereArgs: [_selectedId],
+        limit: 1,
+      );
+      if (rows.isEmpty) {
+        _message('المستند المحدد لم يعد موجودًا؛ حدّث القائمة');
+        return;
+      }
+      _select(rows.first);
+      await _loadReferenceOptions();
+      if (mounted) {
+        setState(() {});
+        _message('تم فتح المستند رقم $_selectedId');
+      }
+    } catch (e) {
+      _message('تعذر فتح المستند: $e');
+    }
+  }
+
   void _clear() { 
     for (final controller in _controllers.values) { controller.clear(); } 
     setState(() { _selectedId = null; _applyDefaults(); }); 
@@ -1423,6 +1450,7 @@ class _DataScreenState extends State<DataScreen> {
               if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ وترحيل', icon: Icons.verified_outlined, primary: true, onPressed: _busy ? () {} : _saveAndPost),
               if (['transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('فتح المحدد', icon: Icons.folder_open, onPressed: _openSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
               if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
