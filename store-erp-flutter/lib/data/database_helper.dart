@@ -632,6 +632,11 @@ class DatabaseHelper {
       if (rows.isEmpty) throw StateError('مستند التحويل غير موجود');
       final h = rows.first;
       if (h['status'] == 'مرحل') throw StateError('التحويل مرحل مسبقًا');
+      if (h['status'] != 'مسودة') throw StateError('لا يمكن ترحيل تحويل مخازن ليس في حالة مسودة');
+      final transferDate = (h['transfer_date']?.toString() ?? '').substring(0, 10);
+      if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [transferDate], limit: 1)).isNotEmpty) {
+        throw StateError('اليوم مقفل ولا يقبل ترحيل تحويلات مخازن جديدة');
+      }
       final fromId = (h['from_warehouse_id'] as num?)?.toInt();
       final toId = (h['to_warehouse_id'] as num?)?.toInt();
       if (fromId == null || toId == null || fromId == toId) throw StateError('حدد مخزنين مختلفين');
@@ -768,9 +773,22 @@ class DatabaseHelper {
     return db.transaction((txn) async {
       final existing = await txn.query('daily_closings', where:'close_date=?', whereArgs:[date], limit:1);
       if (existing.isNotEmpty) throw StateError('تم إقفال هذا اليوم مسبقًا');
-      final drafts = await txn.rawQuery("SELECT 'مبيعات' AS kind, COUNT(*) AS n FROM sales_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى') UNION ALL SELECT 'مشتريات', COUNT(*) FROM purchases_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%','$date%']);
-      final pending = drafts.fold<int>(0,(sum,row)=>sum+((row['n'] as num?)?.toInt() ?? 0));
-      if (pending > 0) throw StateError('يوجد $pending مستند مبيعات/مشتريات غير مرحل؛ عالجها قبل الإقفال');
+      final pendingQueries = <List<Map<String, Object?>>>[
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM sales_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM purchases_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM sales_returns WHERE return_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM warehouse_transfers WHERE transfer_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM cash_transfers WHERE transfer_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM damage_documents WHERE document_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+        await txn.rawQuery("SELECT COUNT(*) AS n FROM inventory_documents WHERE inventory_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
+      ];
+      final pending = pendingQueries.fold<int>(
+        0,
+        (sum, result) => sum + ((result.first['n'] as num?)?.toInt() ?? 0),
+      );
+      if (pending > 0) {
+        throw StateError('يوجد $pending مستند تشغيلي غير مرحل في التاريخ المحدد؛ عالجه قبل الإقفال');
+      }
       final sales = await txn.rawQuery("SELECT COALESCE(SUM(net),0) AS total, COALESCE(SUM(paid),0) AS paid FROM sales_header WHERE invoice_date LIKE ? AND status='مرحل'", ['$date%']);
       final purchases = await txn.rawQuery("SELECT COALESCE(SUM(net),0) AS total FROM purchases_header WHERE invoice_date LIKE ? AND status='مرحل'", ['$date%']);
       final cash = await txn.rawQuery('SELECT COALESCE(SUM(balance),0) AS total FROM cash_boxes');
