@@ -116,13 +116,7 @@ class _BackupScreenState extends State<BackupScreen> {
       final target = await source.copy(p.join(directory.path, name));
       setState(() { _progress = 0.8; _status = 'التحقق من الملف...'; });
       if (_verify || _verifyDaily) {
-        final handle = await target.open();
-        try {
-          final signature = String.fromCharCodes(await handle.read(16));
-          if (signature != 'SQLite format 3\u0000' || await target.length() < 100) {
-            throw StateError('فشل التحقق من توقيع ملف قاعدة البيانات');
-          }
-        } finally { await handle.close(); }
+        await _db.verifyDatabaseFile(target.path);
       }
       await _db.insert('backup_history', {'file_path': target.path, 'status': 'نجاح'});
       if (mounted) setState(() { _progress = 1; _status = 'اكتملت النسخة: ${target.path}'; });
