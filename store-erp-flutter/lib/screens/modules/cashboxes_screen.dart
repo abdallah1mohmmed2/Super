@@ -254,7 +254,6 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
     }
   }
 
-  @override
   Widget _summaryCard(String title, String value, IconData icon, Color color) => SizedBox(
     width: 220,
     child: Card(
