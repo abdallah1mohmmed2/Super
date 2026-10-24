@@ -456,6 +456,7 @@ class DatabaseHelper {
       final saleDate=(sale['invoice_date']?.toString() ?? '').substring(0,10);
       if ((await txn.query('daily_closings', where:'close_date=?', whereArgs:[saleDate], limit:1)).isNotEmpty) throw StateError('اليوم مقفل ولا يقبل ترحيل مستندات جديدة');
       if (sale['status'] == 'مرحل') throw StateError('الفاتورة مرحلة مسبقًا');
+      if (sale['status'] != 'مسودة') throw StateError('لا يمكن ترحيل فاتورة ليست في حالة مسودة');
       if (lines.isEmpty) throw StateError('لا يمكن ترحيل فاتورة بلا أصناف');
       if (net < 0 || paid < 0 || paid > net) throw StateError('تحقق من الصافي والمبلغ المدفوع');
       double costTotal = 0;
@@ -568,6 +569,7 @@ class DatabaseHelper {
       final purchaseDate=(header['invoice_date']?.toString() ?? '').substring(0,10);
       if ((await txn.query('daily_closings', where:'close_date=?', whereArgs:[purchaseDate], limit:1)).isNotEmpty) throw StateError('اليوم مقفل ولا يقبل ترحيل مستندات جديدة');
       if (header['status'] == 'مرحل') throw StateError('فاتورة المشتريات مرحلة مسبقًا');
+      if (header['status'] != 'مسودة') throw StateError('لا يمكن ترحيل فاتورة مشتريات ليست في حالة مسودة');
       if (lines.isEmpty) throw StateError('أضف صنفًا واحدًا على الأقل');
       if (net < 0 || paid < 0 || paid > net) throw StateError('تحقق من صافي الفاتورة والمدفوع');
       for (final line in lines) {
@@ -695,6 +697,7 @@ class DatabaseHelper {
       if (rows.isEmpty) throw StateError('مستند المرتجع غير موجود');
       final h = rows.first;
       if (h['status'] == 'مرحل') throw StateError('المرتجع مرحل مسبقًا');
+      if (h['status'] != 'مسودة') throw StateError('لا يمكن ترحيل مرتجع ليس في حالة مسودة');
       final returnDate = (h['return_date']?.toString() ?? '').substring(0, 10);
       if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [returnDate], limit: 1)).isNotEmpty) throw StateError('اليوم مقفل ولا يقبل ترحيل مرتجعات جديدة');
       if (lines.isEmpty) throw StateError('أضف أصناف المرتجع');
