@@ -83,14 +83,16 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
     if(mounted)setState(() { lines.removeWhere((l) => l['id'] == selectedLineId); selectedLineId = null; });
   }
 
-  Future<void> _save() async {
-    if(transferId==null){msg('أنشئ مستند تحويل أولًا');return;}
-    if(status!='مسودة'){msg('التحويل غير قابل للتعديل');return;}
-    if(fromId==null||toId==null||fromId==toId){msg('اختر مخزنين مختلفين');return;}
+  Future<bool> _save() async {
+    if(transferId==null){msg('أنشئ مستند تحويل أولًا');return false;}
+    if(status!='مسودة'){msg('التحويل غير قابل للتعديل');return false;}
+    if(fromId==null||toId==null||fromId==toId){msg('اختر مخزنين مختلفين');return false;}
     try{
-      await db.update('warehouse_transfers',{'transfer_no':number.text.trim(),'transfer_date':dateText(date),'from_warehouse_id':fromId,'to_warehouse_id':toId,'notes':notes.text.trim()},where:'id=?',whereArgs:[transferId]);
+      final changed = await db.update('warehouse_transfers',{'transfer_no':number.text.trim(),'transfer_date':dateText(date),'from_warehouse_id':fromId,'to_warehouse_id':toId,'notes':notes.text.trim()},where:'id=? AND status=?',whereArgs:[transferId,'مسودة']);
+      if (changed != 1) { msg('لم يتم حفظ التحويل؛ تحقق من أن المستند ما زال مسودة'); return false; }
       await _reloadDocs();msg('تم حفظ مسودة التحويل');
-    }catch(e){msg('تعذر حفظ التحويل: $e');}
+      return true;
+    }catch(e){msg('تعذر حفظ التحويل: $e'); return false;}
   }
 
   Future<void> _post() async {
@@ -100,7 +102,7 @@ class _WarehouseTransfersScreenState extends State<WarehouseTransfersScreen> {
     if(ok!=true||!mounted)return;
     setState(()=>busy=true);
     try{
-      await _save();
+      if (!await _save()) return;
       await db.transferWarehouse(transferId:transferId!,lines:lines.map((l)=><String,num>{'product_id':l['product_id'] as num,'qty':l['qty'] as num,'factor':l['factor'] as num? ?? 1}).toList());
       if(mounted)setState(()=>status='مرحل');
       await _reloadDocs();msg('تم ترحيل التحويل وتحديث المخزون');
