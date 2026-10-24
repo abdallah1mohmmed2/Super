@@ -734,7 +734,7 @@ class DatabaseHelper {
     return db.transaction((txn) async {
       final existing = await txn.query('daily_closings', where:'close_date=?', whereArgs:[date], limit:1);
       if (existing.isNotEmpty) throw StateError('تم إقفال هذا اليوم مسبقًا');
-      final drafts = await txn.rawQuery("SELECT 'مبيعات' AS kind, COUNT(*) AS n FROM sales_header WHERE invoice_date LIKE ? AND status!='مرحل' UNION ALL SELECT 'مشتريات', COUNT(*) FROM purchases_header WHERE invoice_date LIKE ? AND status!='مرحل'", ['$date%','$date%']);
+      final drafts = await txn.rawQuery("SELECT 'مبيعات' AS kind, COUNT(*) AS n FROM sales_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى') UNION ALL SELECT 'مشتريات', COUNT(*) FROM purchases_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%','$date%']);
       final pending = drafts.fold<int>(0,(sum,row)=>sum+((row['n'] as num?)?.toInt() ?? 0));
       if (pending > 0) throw StateError('يوجد $pending مستند مبيعات/مشتريات غير مرحل؛ عالجها قبل الإقفال');
       final sales = await txn.rawQuery("SELECT COALESCE(SUM(net),0) AS total, COALESCE(SUM(paid),0) AS paid FROM sales_header WHERE invoice_date LIKE ? AND status='مرحل'", ['$date%']);
