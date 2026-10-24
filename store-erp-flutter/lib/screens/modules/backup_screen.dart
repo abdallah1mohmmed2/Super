@@ -199,6 +199,8 @@ class _BackupScreenState extends State<BackupScreen> {
     setState(() { _busy = true; _progress = 0.2; _status = 'التحقق من النسخة واستبدال قاعدة البيانات...'; });
     try {
       await _db.restoreDatabaseFrom(path);
+      // Refresh provider-backed screens after the database connection has been replaced.
+      await context.read<AppProvider>().refresh();
       await _reloadHistory();
       if (mounted) setState(() => _status = 'اكتمل الاسترجاع من: $path');
       _message('تم استرجاع قاعدة البيانات. راجع البيانات قبل متابعة العمل.');
