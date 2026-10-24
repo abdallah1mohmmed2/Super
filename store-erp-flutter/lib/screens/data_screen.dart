@@ -708,6 +708,136 @@ class _DataScreenState extends State<DataScreen> {
   String? get _lineTable => switch(widget.screenKey) {'sales'=>'sales_lines','purchases'=>'purchases_lines','returns'=>'sales_return_lines','transfers'=>'warehouse_transfer_lines','damage'=>'damage_lines','countdocs'=>'inventory_items',_=>null};
   String? get _lineParent => switch(widget.screenKey) {'sales'=>'sales_id','purchases'=>'purchase_id','returns'=>'return_id','transfers'=>'transfer_id','damage'=>'document_id','countdocs'=>'document_id',_=>null};
   
+  Future<void> _editLine(Map<String, Object?> row) async {
+    if (_selectedId == null || !['sales', 'purchases', 'returns'].contains(widget.screenKey)) return;
+    final table = _lineTable;
+    final parent = _lineParent;
+    if (table == null || parent == null) return;
+    final headers = await DatabaseHelper.instance.query(
+      config.table,
+      where: 'id=?',
+      whereArgs: [_selectedId],
+      limit: 1,
+    );
+    if (headers.isEmpty || headers.first['status'] == 'مرحل') {
+      _message('لا يمكن تعديل بند مستند غير موجود أو مرحل');
+      return;
+    }
+    final isSale = widget.screenKey == 'sales';
+    final isPurchase = widget.screenKey == 'purchases';
+    final qtyController = TextEditingController(text: ((row['qty'] as num?)?.toDouble() ?? 0).toString());
+    final priceController = TextEditingController(text: ((row[isPurchase ? 'cost' : 'price'] as num?)?.toDouble() ?? 0).toString());
+    final discountController = TextEditingController(text: ((row['discount'] as num?)?.toDouble() ?? 0).toString());
+    final taxController = TextEditingController(text: ((row['tax'] as num?)?.toDouble() ?? 0).toString());
+    final batchController = TextEditingController(text: (row['batch_no'] ?? '').toString());
+    final productionController = TextEditingController(text: (row['production_date'] ?? '').toString());
+    final expiryController = TextEditingController(text: (row['expiry_date'] ?? '').toString());
+    var condition = (row['condition'] ?? 'سليم').toString();
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          title: Text(isSale ? 'تعديل بند المبيعات' : isPurchase ? 'تعديل بند المشتريات' : 'تعديل بند المرتجع'),
+          content: SizedBox(
+            width: 460,
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(controller: qtyController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: isReturn ? 'الكمية الأساسية المرتجعة' : 'الكمية')),
+                  const SizedBox(height: 10),
+                  TextField(controller: priceController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: InputDecoration(labelText: isPurchase ? 'سعر الشراء للوحدة' : 'سعر الوحدة')),
+                  if (!isReturn) ...[
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      Expanded(child: TextField(controller: discountController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الخصم'))),
+                      const SizedBox(width: 10),
+                      Expanded(child: TextField(controller: taxController, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الضريبة'))),
+                    ]),
+                  ],
+                  if (isPurchase) ...[
+                    const SizedBox(height: 10),
+                    TextField(controller: batchController, decoration: const InputDecoration(labelText: 'رقم التشغيلة')),
+                    const SizedBox(height: 10),
+                    TextField(controller: productionController, decoration: const InputDecoration(labelText: 'تاريخ الإنتاج YYYY-MM-DD')),
+                    const SizedBox(height: 10),
+                    TextField(controller: expiryController, decoration: const InputDecoration(labelText: 'تاريخ الانتهاء YYYY-MM-DD')),
+                  ],
+                  if (!isSale && !isPurchase) ...[
+                    const SizedBox(height: 10),
+                    DropdownButtonFormField<String>(
+                      initialValue: ['سليم', 'تالف', 'غير قابل للبيع'].contains(condition) ? condition : 'سليم',
+                      decoration: const InputDecoration(labelText: 'حالة الصنف'),
+                      items: const ['سليم', 'تالف', 'غير قابل للبيع'].map((value) => DropdownMenuItem(value: value, child: Text(value))).toList(),
+                      onChanged: (value) => setDialogState(() => condition = value ?? 'سليم'),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حفظ التعديل')),
+          ],
+        ),
+      ),
+    );
+    if (result != true || !mounted) {
+      qtyController.dispose(); priceController.dispose(); discountController.dispose(); taxController.dispose();
+      batchController.dispose(); productionController.dispose(); expiryController.dispose();
+      return;
+    }
+    try {
+      final qty = double.tryParse(qtyController.text.trim()) ?? 0;
+      final price = double.tryParse(priceController.text.trim()) ?? -1;
+      final discount = double.tryParse(discountController.text.trim()) ?? 0;
+      final tax = double.tryParse(taxController.text.trim()) ?? 0;
+      if (qty <= 0 || price < 0 || discount < 0 || tax < 0) {
+        throw StateError('الكمية موجبة والسعر والخصم والضريبة غير سالبة مطلوبة');
+      }
+      if (!isReturn && discount > qty * price) throw StateError('الخصم لا يمكن أن يتجاوز إجمالي البند قبل الضريبة');
+      final updates = <String, Object?>{};
+      if (isReturn) {
+        updates.addAll({'qty': qty, 'price': price, 'condition': condition});
+      } else {
+        updates.addAll({
+          'qty': qty,
+          isPurchase ? 'cost' : 'price': price,
+          'discount': discount,
+          'tax': tax,
+          'line_total': (qty * price - discount + tax).clamp(0, double.infinity),
+        });
+        if (isPurchase) {
+          final production = productionController.text.trim();
+          final expiry = expiryController.text.trim();
+          if (production.isNotEmpty && !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(production)) {
+            throw StateError('تاريخ الإنتاج يجب أن يكون بصيغة YYYY-MM-DD');
+          }
+          if (expiry.isNotEmpty && !RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(expiry)) {
+            throw StateError('تاريخ الانتهاء يجب أن يكون بصيغة YYYY-MM-DD');
+          }
+          updates.addAll({
+            'batch_no': batchController.text.trim(),
+            'production_date': production.isEmpty ? null : production,
+            'expiry_date': expiry.isEmpty ? null : expiry,
+          });
+        }
+      }
+      await DatabaseHelper.instance.update(table, updates, where: 'id=? AND $parent=?', whereArgs: [row['id'], _selectedId]);
+      await _recalculateDraftTotals();
+      if (!mounted) return;
+      await context.read<AppProvider>().refresh();
+      _message('تم تعديل البند وتحديث إجمالي المستند');
+      setState(() {});
+    } catch (e) {
+      _message('تعذر تعديل البند: $e');
+    } finally {
+      qtyController.dispose(); priceController.dispose(); discountController.dispose(); taxController.dispose();
+      batchController.dispose(); productionController.dispose(); expiryController.dispose();
+    }
+  }
+
   Future<void> _deleteLine(Map<String,Object?> row) async {
     final table=_lineTable, parent=_lineParent; 
     if(table==null||parent==null||_selectedId==null) return;
@@ -1405,13 +1535,19 @@ class _DataScreenState extends State<DataScreen> {
                                   return DataRow(
                                     cells: [
                                       ...keys.map((k) => DataCell(Text(_displayValue(k, r[k])))),
-                                      DataCell(
+                                      DataCell(Row(mainAxisSize: MainAxisSize.min, children: [
+                                        if (['sales', 'purchases', 'returns'].contains(widget.screenKey))
+                                          IconButton(
+                                            tooltip: 'تعديل البند',
+                                            onPressed: () => _editLine(r),
+                                            icon: const Icon(Icons.edit_outlined),
+                                          ),
                                         IconButton(
                                           tooltip: 'حذف البند',
                                           onPressed: () => _deleteLine(r),
                                           icon: const Icon(Icons.delete_outline, color: Colors.red),
                                         ),
-                                      ),
+                                      ])),
                                     ],
                                   );
                                 }).toList(),
