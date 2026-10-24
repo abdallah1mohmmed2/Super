@@ -661,6 +661,11 @@ class DatabaseHelper {
       if (rows.isEmpty) throw StateError('مستند تحويل الصندوق غير موجود');
       final h = rows.first;
       if (h['status'] == 'مرحل') throw StateError('التحويل مرحل مسبقًا');
+      if (h['status'] != 'مسودة') throw StateError('لا يمكن ترحيل تحويل ليس في حالة مسودة');
+      final transferDate = (h['transfer_date']?.toString() ?? '').substring(0, 10);
+      if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [transferDate], limit: 1)).isNotEmpty) {
+        throw StateError('اليوم مقفل ولا يقبل ترحيل تحويلات نقدية جديدة');
+      }
       final fromId = (h['from_cashbox_id'] as num?)?.toInt();
       final toId = (h['to_cashbox_id'] as num?)?.toInt();
       final amount = (h['amount'] as num?)?.toDouble() ?? 0;
@@ -685,6 +690,11 @@ class DatabaseHelper {
       if (docs.isEmpty) throw StateError('مستند التالف غير موجود');
       final h = docs.first;
       if (h['status'] == 'مرحل') throw StateError('مستند التالف مرحل مسبقًا');
+      if (h['status'] != 'مسودة') throw StateError('لا يمكن ترحيل سند تالف ليس في حالة مسودة');
+      final documentDate = (h['document_date']?.toString() ?? '').substring(0, 10);
+      if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [documentDate], limit: 1)).isNotEmpty) {
+        throw StateError('اليوم مقفل ولا يقبل ترحيل سندات التالف الجديدة');
+      }
       final warehouseId = (h['warehouse_id'] as num?)?.toInt();
       if (warehouseId == null || lines.isEmpty) throw StateError('حدد المخزن والأصناف');
       double totalCost = 0;
@@ -708,7 +718,7 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> postInventoryCount({required int documentId}) async {
+  Future<void> postInventoryCount({required int documentId, int? postedBy}) async {
     final db = await database;
     await db.transaction((txn) async {
       final docs = await txn.query('inventory_documents', where:'id=?', whereArgs:[documentId], limit:1);
@@ -716,6 +726,10 @@ class DatabaseHelper {
       final h = docs.first;
       if (h['status'] == 'مرحل') throw StateError('مستند الجرد مرحل مسبقًا');
       if (h['status'] != 'معتمد') throw StateError('يجب اعتماد مستند الجرد قبل الترحيل');
+      final inventoryDate = (h['inventory_date']?.toString() ?? '').substring(0, 10);
+      if ((await txn.query('daily_closings', where: 'close_date=?', whereArgs: [inventoryDate], limit: 1)).isNotEmpty) {
+        throw StateError('اليوم مقفل ولا يقبل ترحيل مستندات الجرد الجديدة');
+      }
       final warehouseId = (h['warehouse_id'] as num?)?.toInt();
       if (warehouseId == null) throw StateError('حدد المخزن');
       final items = await txn.query('inventory_items', where:'document_id=?', whereArgs:[documentId]);
@@ -735,7 +749,7 @@ class DatabaseHelper {
         else { await txn.update('inventory', {'qty':countQty}, where:'id=?', whereArgs:[stocks.first['id']]); }
         await txn.update('inventory_items', {'book_qty':bookQty,'difference':difference,'difference_cost':difference*cost}, where:'id=?', whereArgs:[item['id']]);
       }
-      await txn.update('inventory_documents', {'status':'مرحل','posted_by':h['created_by']}, where:'id=?', whereArgs:[documentId]);
+      await txn.update('inventory_documents', {'status':'مرحل','posted_by':postedBy}, where:'id=?', whereArgs:[documentId]);
       if (adjustmentCost >= 0) {
         await _createJournal(txn,'COUNT',documentId,h['inventory_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'تسوية جرد ${h['document_no'] ?? documentId}',[
           ['1100','المخزون',adjustmentCost,0],['3000','فروقات الجرد',0,adjustmentCost]
