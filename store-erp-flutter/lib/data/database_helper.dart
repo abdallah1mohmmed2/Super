@@ -663,6 +663,7 @@ class DatabaseHelper {
       final requestedByProduct=<int,double>{};
       for(final line in lines){final id=line['product_id']!.toInt();final q=line['qty']!.toDouble();if(q<=0)throw StateError('كمية المرتجع يجب أن تكون أكبر من صفر');requestedByProduct[id]=(requestedByProduct[id]??0)+q;}
       final checkedProducts=<int>{};
+      final maxOriginalPriceByProduct=<int,double>{};
       for (final line in lines) {
         final productId = line['product_id']!.toInt(); final qty = line['qty']!.toDouble(); final price = (line['price'] ?? 0).toDouble();
         if (qty <= 0 || price < 0) throw StateError('تحقق من كمية وسعر المرتجع');
@@ -671,6 +672,18 @@ class DatabaseHelper {
           final returned = await txn.rawQuery('SELECT COALESCE(SUM(l.qty),0) AS qty FROM sales_return_lines l JOIN sales_returns r ON r.id=l.return_id WHERE r.sales_id=? AND r.status=? AND l.product_id=?',[originalId,'مرحل',productId]);
           final soldQty = (sold.first['qty'] as num).toDouble(); final returnedQty = (returned.first['qty'] as num).toDouble();
           if ((requestedByProduct[productId]??0) > soldQty-returnedQty+0.000001) throw StateError('كمية المرتجع تتجاوز الكمية المباعة للصنف $productId');
+          final originalLines = await txn.query('sales_lines', where:'sales_id=? AND product_id=?', whereArgs:[originalId, productId]);
+          var maxOriginalPrice = 0.0;
+          for (final originalLine in originalLines) {
+            final factor = ((originalLine['factor'] as num?)?.toDouble() ?? 1);
+            final safeFactor = factor > 0 ? factor : 1;
+            final unitPrice = ((originalLine['price'] as num?)?.toDouble() ?? 0) / safeFactor;
+            if (unitPrice > maxOriginalPrice) maxOriginalPrice = unitPrice;
+          }
+          maxOriginalPriceByProduct[productId] = maxOriginalPrice;
+        }
+        if (price > (maxOriginalPriceByProduct[productId] ?? 0) + 0.005) {
+          throw StateError('سعر استرجاع الصنف $productId لا يمكن أن يتجاوز سعر بيعه الأصلي للوحدة الأساسية');
         }
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
         if (products.isEmpty) throw StateError('الصنف غير موجود');
