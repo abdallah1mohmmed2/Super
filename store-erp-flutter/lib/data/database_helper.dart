@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 12,
+        version: 13,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -31,7 +31,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 12, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 13, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -156,6 +156,19 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE customers ADD COLUMN credit_notes TEXT');
       }
     }
+    if (oldVersion < 13) {
+      for (final account in [
+        ['1020', 'البنك والتحصيلات الإلكترونية', 'أصول'],
+        ['1030', 'شيكات تحت التحصيل', 'أصول'],
+        ['2030', 'شيكات صادرة مستحقة', 'التزامات'],
+      ]) {
+        await db.insert(
+          'app_accounts',
+          {'account_code': account[0], 'account_name': account[1], 'account_type': account[2]},
+          conflictAlgorithm: ConflictAlgorithm.ignore,
+        );
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -214,8 +227,9 @@ class DatabaseHelper {
     await db.insert('categories', {'name':'عام'});
     await db.insert('app_settings', {'key':'schema_version','value':'1'});
     for (final account in [
-      ['1000','الصندوق','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
-      ['2000','ذمم الموردين','التزامات'], ['3000','رأس المال','حقوق ملكية'],
+      ['1000','الصندوق','أصول'], ['1020','البنك والتحصيلات الإلكترونية','أصول'],
+      ['1030','شيكات تحت التحصيل','أصول'], ['1100','المخزون','أصول'], ['1200','ذمم العملاء','أصول'],
+      ['2000','ذمم الموردين','التزامات'], ['2030','شيكات صادرة مستحقة','التزامات'], ['3000','رأس المال','حقوق ملكية'],
       ['4000','إيرادات المبيعات','إيرادات'], ['4100','مردودات المبيعات','إيرادات'], ['5000','تكلفة البضاعة المباعة','مصروفات'],
       ['5100','مصروفات التالف','مصروفات']
     ]) {
@@ -443,14 +457,49 @@ class DatabaseHelper {
         final balance=(customer['balance'] as num?)?.toDouble() ?? 0;
         if(limit>0 && balance+(net-paid)>limit) throw StateError('تجاوز حد ائتمان العميل');
       }
+      var cashPaid = paid;
+      var bankPaid = 0.0;
+      var checksReceived = 0.0;
+      final paymentRows = await txn.query(
+        'document_payments',
+        where: 'document_type=? AND document_id=?',
+        whereArgs: ['sales', saleId],
+      );
+      if (paymentRows.isNotEmpty) {
+        cashPaid = 0;
+        for (final payment in paymentRows) {
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0;
+          switch ((payment['method'] ?? 'نقدي').toString()) {
+            case 'نقدي':
+              cashPaid += amount;
+              break;
+            case 'بطاقة':
+            case 'تحويل بنكي':
+              bankPaid += amount;
+              break;
+            case 'شيك':
+              checksReceived += amount;
+              break;
+            default:
+              throw StateError('طريقة سداد غير مدعومة في فاتورة المبيعات: ${payment['method']}');
+          }
+        }
+        if ((cashPaid + bankPaid + checksReceived - paid).abs() > 0.005) {
+          throw StateError('مجموع دفعات المبيعات لا يطابق المبلغ المدفوع في رأس الفاتورة');
+        }
+      }
       await txn.update('sales_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'customer_id':customerId}, where:'id=?', whereArgs:[saleId]);
-      if (paid > 0) {
-        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':paid,'reference':'SALE-$saleId'});
-        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[paid,cashBoxId]);
+      if (cashPaid > 0) {
+        final cashRows = await txn.query('cash_boxes', where:'id=?', whereArgs:[cashBoxId], limit:1);
+        if (cashRows.isEmpty) throw StateError('الصندوق المحدد للمبيعات غير موجود');
+        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مبيعات','amount':cashPaid,'reference':'SALE-$saleId'});
+        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance + ? WHERE id=?',[cashPaid,cashBoxId]);
       }
       if (customerId != null && net > paid) await txn.rawUpdate('UPDATE customers SET balance = balance + ? WHERE id=?',[net-paid,customerId]);
       final entryId = await _createJournal(txn, 'SALE', saleId, sale['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مبيعات ${sale['invoice_no'] ?? saleId}', [
-        ['1000', 'الصندوق', paid, 0],
+        ['1000', 'الصندوق', cashPaid, 0],
+        ['1020', 'البنك والتحصيلات الإلكترونية', bankPaid, 0],
+        ['1030', 'شيكات تحت التحصيل', checksReceived, 0],
         ['1200', 'ذمم العملاء', net-paid, 0],
         ['4000', 'إيرادات المبيعات', 0, net],
         ['5000', 'تكلفة البضاعة المباعة', costTotal, 0],
@@ -517,18 +566,51 @@ class DatabaseHelper {
           }
         }
       }
+      var cashPaid = paid;
+      var bankPaid = 0.0;
+      var checksPaid = 0.0;
+      final paymentRows = await txn.query(
+        'document_payments',
+        where: 'document_type=? AND document_id=?',
+        whereArgs: ['purchases', purchaseId],
+      );
+      if (paymentRows.isNotEmpty) {
+        cashPaid = 0;
+        for (final payment in paymentRows) {
+          final amount = (payment['amount'] as num?)?.toDouble() ?? 0;
+          switch ((payment['method'] ?? 'نقدي').toString()) {
+            case 'نقدي':
+              cashPaid += amount;
+              break;
+            case 'بطاقة':
+            case 'تحويل بنكي':
+              bankPaid += amount;
+              break;
+            case 'شيك':
+              checksPaid += amount;
+              break;
+            default:
+              throw StateError('طريقة سداد غير مدعومة في فاتورة المشتريات: ${payment['method']}');
+          }
+        }
+        if ((cashPaid + bankPaid + checksPaid - paid).abs() > 0.005) {
+          throw StateError('مجموع دفعات المشتريات لا يطابق المبلغ المدفوع في رأس الفاتورة');
+        }
+      }
       await txn.update('purchases_header', {'status':'مرحل','net':net,'paid':paid,'warehouse_id':warehouseId,'cash_box_id':cashBoxId,'supplier_id':supplierId}, where:'id=?', whereArgs:[purchaseId]);
-      if (paid > 0) {
+      if (cashPaid > 0) {
         final cashRows=await txn.query('cash_boxes',where:'id=?',whereArgs:[cashBoxId],limit:1);
         if(cashRows.isEmpty) throw StateError('الصندوق المحدد غير موجود');
-        if(((cashRows.first['balance'] as num?)?.toDouble() ?? 0)<paid) throw StateError('رصيد الصندوق غير كافٍ لسداد المشتريات');
-        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مشتريات','amount':-paid,'reference':'PURCHASE-$purchaseId'});
-        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance - ? WHERE id=?',[paid,cashBoxId]);
+        if(((cashRows.first['balance'] as num?)?.toDouble() ?? 0)<cashPaid) throw StateError('رصيد الصندوق غير كافٍ لسداد الجزء النقدي من المشتريات');
+        await txn.insert('cash_box_transactions', {'cash_box_id':cashBoxId,'type':'مشتريات','amount':-cashPaid,'reference':'PURCHASE-$purchaseId'});
+        await txn.rawUpdate('UPDATE cash_boxes SET balance = balance - ? WHERE id=?',[cashPaid,cashBoxId]);
       }
       if (supplierId != null && net > paid) await txn.rawUpdate('UPDATE suppliers SET balance = balance + ? WHERE id=?',[net-paid,supplierId]);
       final entryId = await _createJournal(txn, 'PURCHASE', purchaseId, header['invoice_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10), 'ترحيل فاتورة مشتريات ${header['invoice_no'] ?? purchaseId}', [
         ['1100', 'المخزون', net, 0],
-        ['1000', 'الصندوق/المتحصلات', 0, paid],
+        ['1000', 'الصندوق/المتحصلات', 0, cashPaid],
+        ['1020', 'البنك والتحصيلات الإلكترونية', 0, bankPaid],
+        ['2030', 'شيكات صادرة مستحقة', 0, checksPaid],
         ['2000', 'ذمم الموردين', 0, net-paid],
       ]);
       await txn.insert('audit_log', {'action':'ترحيل فاتورة مشتريات','entity':'purchases_header','entity_id':purchaseId,'details':'قيد محاسبي $entryId'});
