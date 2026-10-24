@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import '../../data/database_helper.dart';
 import 'inventory_count_screen.dart';
 
@@ -119,7 +120,7 @@ class _InventoryDocumentsScreenState extends State<InventoryDocumentsScreen> {
         ]);
       }).toList())))),
       if (busy) const LinearProgressIndicator(),
-      Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق'))),
+      Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق'))),
     ]);
   }
 
