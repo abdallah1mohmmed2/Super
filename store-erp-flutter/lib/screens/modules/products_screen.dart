@@ -185,7 +185,7 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     );
   }
 
-  @override   Future<void> exportProducts() async {
+  Future<void> exportProducts() async {
     final visible = products.where((row) => filter.isEmpty || row.values.any((v) => v.toString().toLowerCase().contains(filter.toLowerCase()))).toList();
     if (visible.isEmpty) { msg('لا توجد أصناف لتصديرها'); return; }
     try {
@@ -205,7 +205,8 @@ class _ProductsScreenState extends State<ProductsScreen> with SingleTickerProvid
     } catch (e) { msg('تعذر تصدير الأصناف: ' + e.toString()); }
   }
 
-Widget build(BuildContext context){
+  @override
+  Widget build(BuildContext context){
     final visible=products.where((p)=>filter.isEmpty||p.values.any((v)=>v.toString().toLowerCase().contains(filter.toLowerCase()))).toList();
     return Padding(padding:const EdgeInsets.all(14),child:Column(children:[
       Wrap(spacing:8,runSpacing:8,children:[
