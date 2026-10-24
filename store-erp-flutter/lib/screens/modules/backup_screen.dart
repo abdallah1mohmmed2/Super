@@ -273,7 +273,7 @@ class _BackupScreenState extends State<BackupScreen> {
       _check('التحقق من النسخة يوميًا', _verifyDaily, (v) => setState(() => _verifyDaily = v ?? false)),
       _check('استخدام Copy Only للنسخ اليومي', _copyOnlyDaily, (v) => setState(() => _copyOnlyDaily = v ?? false)),
       const Text('خيار Copy Only لا يغيّر نسخ ملف SQLite المحلي؛ يُحفظ للتوافق مع إعدادات النسخ فقط.', style: TextStyle(color: Colors.blueGrey)),
-      const Text('تنبيه: يُنفّذ النسخ اليومي مرة واحدة بعد الوقت المحدد ما دام التطبيق مفتوحًا؛ لا يعمل بعد إغلاق التطبيق.', style: TextStyle(color: Colors.deepOrange)),
+      const Text('تنبيه: يُنفّذ النسخ اليومي مرة واحدة بعد الوقت المحدد ما دام التطبيق وشاشة النسخ الاحتياطي مفتوحين؛ لا يعمل بعد إغلاق التطبيق أو مغادرة هذه الشاشة.', style: TextStyle(color: Colors.deepOrange)),
       Wrap(spacing: 8, children: [
         OutlinedButton.icon(onPressed: _busy ? null : _saveSettings, icon: const Icon(Icons.settings), label: const Text('حفظ الإعدادات')),
         OutlinedButton.icon(onPressed: _busy ? null : () => _createBackup(), icon: const Icon(Icons.play_arrow), label: const Text('تشغيل الآن')),
