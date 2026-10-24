@@ -791,4 +791,82 @@ void main() {
     );
   });
 
+
+  test('cash-box transfer updates both balances and posts a balanced journal',
+      () async {
+    final db = await helper.database;
+    await db.update('cash_boxes', {'balance': 100}, where: 'id=?', whereArgs: [1]);
+    final destinationId = await db.insert('cash_boxes', {
+      'name': 'صندوق الوجهة',
+      'balance': 10,
+      'is_active': 1,
+    });
+    final transferId = await db.insert('cash_transfers', {
+      'transfer_no': 'TEST-CASH-TRANSFER-1',
+      'from_cashbox_id': 1,
+      'to_cashbox_id': destinationId,
+      'amount': 30,
+      'reason': 'اختبار',
+      'transfer_date': today(),
+      'status': 'مسودة',
+    });
+
+    await helper.transferCash(transferId: transferId);
+
+    final source = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    final destination = await helper.query(
+      'cash_boxes',
+      where: 'id=?',
+      whereArgs: [destinationId],
+    );
+    final transfer = await helper.query(
+      'cash_transfers',
+      where: 'id=?',
+      whereArgs: [transferId],
+    );
+    final movements = await helper.query(
+      'cash_box_transactions',
+      where: 'reference=?',
+      whereArgs: ['TRANSFER-$transferId'],
+    );
+    final entries = await helper.query(
+      'accounting_entries',
+      where: 'source_type=? AND source_id=?',
+      whereArgs: ['CASH_TRANSFER', transferId],
+    );
+    final lines = await helper.query(
+      'accounting_entry_lines',
+      where: 'entry_id=?',
+      whereArgs: [entries.single['id']],
+    );
+
+    expect((source.single['balance'] as num).toDouble(), 70);
+    expect((destination.single['balance'] as num).toDouble(), 40);
+    expect(transfer.single['status'], 'مرحل');
+    expect(movements, hasLength(2));
+    expect(movements.fold<double>(
+      0,
+      (sum, row) => sum + (row['amount'] as num).toDouble(),
+    ), 0);
+    expect(lines, hasLength(2));
+    await expectJournalBalanced('CASH_TRANSFER', transferId);
+
+    await expectLater(
+      helper.transferCash(transferId: transferId),
+      throwsA(isA<StateError>()),
+    );
+    final sourceAfterRetry = await helper.query(
+      'cash_boxes',
+      where: 'id=?',
+      whereArgs: [1],
+    );
+    final destinationAfterRetry = await helper.query(
+      'cash_boxes',
+      where: 'id=?',
+      whereArgs: [destinationId],
+    );
+    expect((sourceAfterRetry.single['balance'] as num).toDouble(), 70);
+    expect((destinationAfterRetry.single['balance'] as num).toDouble(), 40);
+  });
+
 }
