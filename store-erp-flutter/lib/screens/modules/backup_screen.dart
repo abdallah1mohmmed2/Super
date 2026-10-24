@@ -79,7 +79,7 @@ class _BackupScreenState extends State<BackupScreen> {
         'copyOnly': _copyOnly, 'verify': _verify, 'daily': _daily,
         'verifyDaily': _verifyDaily, 'copyOnlyDaily': _copyOnlyDaily, 'safetyBackup': _safetyBackup,
       }));
-      _message('حُفظت الإعدادات محليًا. الجدولة اليومية محفوظة كإعداد فقط؛ لا تعمل في الخلفية عند إغلاق التطبيق.');
+      _message('حُفظت الإعدادات محليًا. النسخ اليومي لا يُنفّذ تلقائيًا حاليًا؛ يلزم إعداد جدولة نظامية مستقلة.');
     } catch (e) { _message('تعذر حفظ الإعدادات: $e'); }
   }
 
@@ -215,6 +215,7 @@ class _BackupScreenState extends State<BackupScreen> {
       const SizedBox(height: 10),
       TextField(controller: _filename, decoration: const InputDecoration(labelText: 'اسم الملف', border: OutlineInputBorder())),
       _check('نسخة Copy Only', _copyOnly, (v) => setState(() => _copyOnly = v ?? false)),
+      const Text('Copy Only خيار خاص ببعض خوادم SQL؛ لا يغيّر طريقة النسخ هنا لأن قاعدة البيانات SQLite محلية ويتم نسخ ملفها.', style: TextStyle(color: Colors.blueGrey)),
       _check('التحقق من الملف بعد الإنشاء', _verify, (v) => setState(() => _verify = v ?? false)),
       Wrap(spacing: 8, runSpacing: 8, children: [
         FilledButton.icon(onPressed: _busy ? null : () => _createBackup(), icon: const Icon(Icons.save_alt), label: const Text('إنشاء النسخة الآن')),
@@ -226,7 +227,7 @@ class _BackupScreenState extends State<BackupScreen> {
       TextField(controller: _time, decoration: const InputDecoration(labelText: 'وقت التشغيل (HH:MM)', border: OutlineInputBorder())),
       _check('التحقق من النسخة يوميًا', _verifyDaily, (v) => setState(() => _verifyDaily = v ?? false)),
       _check('استخدام Copy Only للنسخ اليومي', _copyOnlyDaily, (v) => setState(() => _copyOnlyDaily = v ?? false)),
-      const Text('يتم حفظ إعدادات الجدولة محليًا. التنفيذ التلقائي عند إغلاق التطبيق يحتاج خدمة مجدولة مستقلة.', style: TextStyle(color: Colors.deepOrange)),
+      const Text('تنبيه: يتم حفظ إعدادات النسخ اليومي فقط؛ لا يُنفّذ تلقائيًا حاليًا. يلزم إعداد جدولة نظامية مستقلة لتشغيله تلقائيًا.', style: TextStyle(color: Colors.deepOrange)),
       Wrap(spacing: 8, children: [
         OutlinedButton.icon(onPressed: _busy ? null : _saveSettings, icon: const Icon(Icons.settings), label: const Text('حفظ الإعدادات')),
         OutlinedButton.icon(onPressed: _busy ? null : () => _createBackup(), icon: const Icon(Icons.play_arrow), label: const Text('تشغيل الآن')),
