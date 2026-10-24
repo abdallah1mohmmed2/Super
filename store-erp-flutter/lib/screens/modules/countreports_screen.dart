@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:excel/excel.dart';
+import 'package:csv/csv.dart';
 import 'package:flutter/material.dart';
 import '../../widgets/common_widgets.dart';
 import 'package:path/path.dart' as p;
@@ -101,6 +103,23 @@ class _CountReportsScreenState extends State<CountReportsScreen> {
     return TextCellValue(value.toString());
   }
 
+  Future<void> _exportCsv() async {
+    if (_rows.isEmpty) { _message('لا توجد بيانات لتصديرها'); return; }
+    try {
+      final docs = await getApplicationDocumentsDirectory();
+      final folder = Directory(p.join(docs.path, 'StoreERP', 'exports'));
+      await folder.create(recursive: true);
+      final file = File(p.join(folder.path, 'inventory_count_report_' + DateTime.now().millisecondsSinceEpoch.toString() + '.csv'));
+      final header = ['رقم المستند', 'التاريخ', 'نوع الجرد', 'الحالة', 'المخزن', 'الصنف', 'الكود', 'الرصيد الدفتري', 'الكمية المعدودة', 'الفرق', 'قيمة الفرق'];
+      final data = _rows.map((r) => <Object?>[r['document_no'], r['inventory_date'], r['inventory_type'], r['status'], r['warehouse'], r['product_name'], r['product_code'], r['book_qty'], r['count_qty'], r['difference'], r['difference_cost']]).toList();
+      final csvText = ListToCsvConverter(eol: '\r\n').convert([header, ...data]);
+      await file.writeAsBytes(utf8.encode('\uFEFF$csvText'), flush: true);
+      _message('تم تصدير ملف CSV: ' + file.path);
+    } catch (e) {
+      _message('تعذر تصدير تقرير الجرد إلى CSV: ' + e.toString());
+    }
+  }
+
   Future<void> _export() async {
     if (_rows.isEmpty) { _message('لا توجد بيانات لتصديرها'); return; }
     try {
@@ -138,7 +157,9 @@ class _CountReportsScreenState extends State<CountReportsScreen> {
         ])),
         OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
         const SizedBox(width: 8),
-        FilledButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.file_download_outlined), label: const Text('تصدير Excel (.xlsx)')),
+        FilledButton.icon(onPressed: _busy ? null : _exportCsv, icon: const Icon(Icons.table_view_outlined), label: const Text('تصدير CSV')),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(onPressed: _busy ? null : _export, icon: const Icon(Icons.file_download_outlined), label: const Text('تصدير Excel (.xlsx)')),
         const SizedBox(width: 8),
         OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]),
