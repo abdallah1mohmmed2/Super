@@ -108,16 +108,17 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     if (mounted) setState(() { lines.removeWhere((r) => r['id'] == selectedLineId); selectedLineId = null; });
   }
 
-  Future<void> _save() async {
-    if (documentId == null) { msg('أنشئ سندًا أولًا'); return; }
-    if (status != 'مسودة') { msg('لا يمكن تعديل سند غير مسودة'); return; }
+  Future<bool> _save() async {
+    if (documentId == null) { msg('أنشئ سندًا أولًا'); return false; }
+    if (status != 'مسودة') { msg('لا يمكن تعديل سند غير مسودة'); return false; }
     try {
       await db.update('damage_documents', {
         'document_no': _number.text.trim(), 'document_date': dateText, 'warehouse_id': warehouseId,
         'document_type': documentType, 'cause': _cause.text.trim(),
       }, where: 'id=?', whereArgs: [documentId]);
       await _reloadDocs(); msg('تم حفظ السند');
-    } catch (e) { msg('تعذر حفظ السند: $e'); }
+      return true;
+    } catch (e) { msg('تعذر حفظ السند: $e'); return false; }
   }
 
   Future<void> _post() async {
@@ -131,7 +132,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     if (ok != true || !mounted) return;
     setState(() => busy = true);
     try {
-      await _save();
+      if (!await _save()) return;
       await db.postDamage(documentId: documentId!, lines: lines.map((r) => <String, num>{
         'product_id': (r['product_id'] as num), 'qty': n(r['qty']),
       }).toList());
