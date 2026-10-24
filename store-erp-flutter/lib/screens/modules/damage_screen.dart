@@ -134,7 +134,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     try {
       if (!await _save()) return;
       await db.postDamage(documentId: documentId!, lines: lines.map((r) => <String, num>{
-        'product_id': (r['product_id'] as num), 'qty': n(r['qty']),
+        'product_id': (r['product_id'] as num), 'qty': n(r['qty']), 'estimated_cost': n(r['estimated_cost']),
       }).toList());
       if (mounted) setState(() => status = 'مرحل');
       await _reloadDocs(); msg('تم ترحيل السند وتحديث المخزون والحسابات');
