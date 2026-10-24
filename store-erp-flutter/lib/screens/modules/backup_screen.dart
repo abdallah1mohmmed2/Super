@@ -79,7 +79,7 @@ class _BackupScreenState extends State<BackupScreen> {
         'copyOnly': _copyOnly, 'verify': _verify, 'daily': _daily,
         'verifyDaily': _verifyDaily, 'copyOnlyDaily': _copyOnlyDaily, 'safetyBackup': _safetyBackup,
       }));
-      _message('حُفظت الإعدادات محليًا. النسخ اليومي لا يُنفّذ تلقائيًا حاليًا؛ يلزم إعداد جدولة نظامية مستقلة.');
+      _message('حُفظت الإعدادات محليًا. ينفّذ التطبيق النسخ اليومي مرة واحدة بعد الوقت المحدد ما دام التطبيق مفتوحًا؛ لا يعمل بعد إغلاق التطبيق.');
     } catch (e) { _message('تعذر حفظ الإعدادات: $e'); }
   }
 
@@ -227,7 +227,8 @@ class _BackupScreenState extends State<BackupScreen> {
       TextField(controller: _time, decoration: const InputDecoration(labelText: 'وقت التشغيل (HH:MM)', border: OutlineInputBorder())),
       _check('التحقق من النسخة يوميًا', _verifyDaily, (v) => setState(() => _verifyDaily = v ?? false)),
       _check('استخدام Copy Only للنسخ اليومي', _copyOnlyDaily, (v) => setState(() => _copyOnlyDaily = v ?? false)),
-      const Text('تنبيه: يتم حفظ إعدادات النسخ اليومي فقط؛ لا يُنفّذ تلقائيًا حاليًا. يلزم إعداد جدولة نظامية مستقلة لتشغيله تلقائيًا.', style: TextStyle(color: Colors.deepOrange)),
+      const Text('خيار Copy Only لا يغيّر نسخ ملف SQLite المحلي؛ يُحفظ للتوافق مع إعدادات النسخ فقط.', style: TextStyle(color: Colors.blueGrey)),
+      const Text('تنبيه: يُنفّذ النسخ اليومي مرة واحدة بعد الوقت المحدد ما دام التطبيق مفتوحًا؛ لا يعمل بعد إغلاق التطبيق.', style: TextStyle(color: Colors.deepOrange)),
       Wrap(spacing: 8, children: [
         OutlinedButton.icon(onPressed: _busy ? null : _saveSettings, icon: const Icon(Icons.settings), label: const Text('حفظ الإعدادات')),
         OutlinedButton.icon(onPressed: _busy ? null : () => _createBackup(), icon: const Icon(Icons.play_arrow), label: const Text('تشغيل الآن')),
