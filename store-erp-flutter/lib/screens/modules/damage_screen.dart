@@ -43,9 +43,16 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   }
 
   Future<void> _loadBatches() async {
-    if (productId == null || warehouseId == null) { if (mounted) setState(() => batches = []); return; }
+    if (productId == null || warehouseId == null) {
+      if (mounted) setState(() { batches = []; batchId = null; _batch.clear(); });
+      return;
+    }
     final rows = await db.query('product_batches', where: 'product_id=? AND warehouse_id=? AND qty>0', whereArgs: [productId, warehouseId], orderBy: 'expiry_date');
-    if (mounted) setState(() { batches = rows; batchId = rows.isEmpty ? null : (rows.first['id'] as num).toInt(); });
+    if (mounted) setState(() {
+      batches = rows;
+      batchId = rows.isEmpty ? null : (rows.first['id'] as num).toInt();
+      _batch.text = rows.isEmpty ? '' : (rows.first['batch_no'] ?? '').toString();
+    });
   }
 
   Future<void> _newDoc() async {
@@ -88,7 +95,16 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     final qty = double.tryParse(_qty.text) ?? 0;
     final cost = double.tryParse(_cost.text) ?? 0;
     if (qty <= 0 || cost < 0) { msg('أدخل كمية موجبة وتكلفة غير سالبة'); return; }
-    final existing = lines.where((r) => (r['product_id'] as num).toInt() == productId && (r['batch_no'] ?? '') == _batch.text).toList();
+    final product = products.where((p) => (p['id'] as num).toInt() == productId).firstOrNull;
+    if (((product?['batch_tracking'] as num?)?.toInt() ?? 0) == 1 && batchId == null) {
+      msg('هذا الصنف يتتبع الدفعات؛ اختر الدفعة قبل إضافة السطر'); return;
+    }
+    if (batchId != null) {
+      final selectedBatch = batches.where((b) => (b['id'] as num).toInt() == batchId && (b['product_id'] as num).toInt() == productId && (b['warehouse_id'] as num).toInt() == warehouseId).firstOrNull;
+      if (selectedBatch == null) { msg('الدفعة المحددة لم تعد متاحة؛ حدّث قائمة الدفعات'); return; }
+      if (n(selectedBatch['qty']) < qty) { msg('الكمية المطلوبة أكبر من رصيد الدفعة المحددة'); return; }
+    }
+    final existing = lines.where((r) => (r['product_id'] as num).toInt() == productId && (r['batch_id'] as num?)?.toInt() == batchId).toList();
     if (existing.isNotEmpty) {
       final row = existing.first;
       final nextQty = n(row['qty']) + qty;
@@ -97,6 +113,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
       await db.insert('damage_lines', {
         'document_id': documentId, 'product_id': productId, 'qty': qty,
         'estimated_cost': cost, 'batch_no': _batch.text.trim().isEmpty ? null : _batch.text.trim(),
+        'batch_id': batchId,
       });
     }
     final rows = await db.query('damage_lines', where: 'document_id=?', whereArgs: [documentId], orderBy: 'id');
@@ -134,8 +151,9 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     setState(() => busy = true);
     try {
       if (!await _save()) return;
-      await db.postDamage(documentId: documentId!, lines: lines.map((r) => <String, num>{
-        'product_id': (r['product_id'] as num), 'qty': n(r['qty']), 'estimated_cost': n(r['estimated_cost']),
+      await db.postDamage(documentId: documentId!, lines: lines.map((r) => <String, Object?>{
+        'product_id': (r['product_id'] as num).toInt(), 'qty': n(r['qty']),
+        'estimated_cost': n(r['estimated_cost']), 'batch_id': (r['batch_id'] as num?)?.toInt(),
       }).toList());
       if (mounted) setState(() => status = 'مرحل');
       await _reloadDocs(); msg('تم ترحيل السند وتحديث المخزون والحسابات');
@@ -178,7 +196,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
           SizedBox(width: 300, child: DropdownButtonFormField<int>(value: products.any((p) => (p['id'] as num).toInt() == productId) ? productId : null, decoration: const InputDecoration(labelText: 'الصنف المختار', border: OutlineInputBorder()), items: matches.map((p) => DropdownMenuItem(value: (p['id'] as num).toInt(), child: Text('${p['name']} • ${p['code'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() { productId = v; final p = products.firstWhere((p) => (p['id'] as num).toInt() == v); _cost.text = n(p['cost_price']).toStringAsFixed(2); }); _loadBatches(); } : null)),
           SizedBox(width: 140, child: TextField(controller: _qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية الأساسية', border: OutlineInputBorder()))),
           SizedBox(width: 150, child: TextField(controller: _cost, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'تكلفة الوحدة', border: OutlineInputBorder()))),
-          SizedBox(width: 220, child: DropdownButtonFormField<int?>(value: batchId, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون دفعة')), ...batches.map((b) => DropdownMenuItem<int?>(value: (b['id'] as num).toInt(), child: Text('${b['batch_no'] ?? b['id']} • رصيد ${b['qty']}')))], onChanged: (v) { setState(() { batchId = v; final b = batches.where((b) => (b['id'] as num).toInt() == v).firstOrNull; _batch.text = (b?['batch_no'] ?? '').toString(); }); })),
+          SizedBox(width: 220, child: DropdownButtonFormField<int?>(value: batchId, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون دفعة')), ...batches.map((b) => DropdownMenuItem<int?>(value: (b['id'] as num).toInt(), child: Text('${b['batch_no'] ?? b['id']} • رصيد ${b['qty']}')))], onChanged: status == 'مسودة' ? (v) { setState(() { batchId = v; final b = batches.where((b) => (b['id'] as num).toInt() == v).firstOrNull; _batch.text = (b?['batch_no'] ?? '').toString(); }); } : null)),
           FilledButton.icon(onPressed: busy ? null : _addLine, icon: const Icon(Icons.add), label: const Text('إضافة سطر')),
           OutlinedButton.icon(onPressed: busy ? null : _deleteLine, icon: const Icon(Icons.delete_outline), label: const Text('حذف السطر')),
         ]),
