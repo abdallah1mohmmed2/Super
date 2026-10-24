@@ -41,6 +41,8 @@ class _DataScreenState extends State<DataScreen> {
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
   bool _referencesLoading = true;
+  List<Map<String, Object?>> _originalInvoiceLines = [];
+  String? _originalInvoiceNumber;
 
   static const _choiceFields = <String, List<String>>{
     'payment_method': ['نقدي', 'بطاقة', 'تحويل بنكي', 'شيك'],
@@ -971,6 +973,20 @@ class _DataScreenState extends State<DataScreen> {
       }
     }
     final products = await DatabaseHelper.instance.query('products');
+    final displayLines = soldLines.map((line) {
+      final productId = (line['product_id'] as num?)?.toInt();
+      final product = products.where((p) => (p['id'] as num?)?.toInt() == productId);
+      return <String, Object?>{
+        ...line,
+        'product_name': product.isEmpty ? 'صنف غير معروف' : (product.first['name'] ?? 'صنف غير معروف'),
+      };
+    }).toList();
+    if (mounted) {
+      setState(() {
+        _originalInvoiceLines = displayLines;
+        _originalInvoiceNumber = (originalHeader['invoice_no'] ?? salesId).toString();
+      });
+    }
     int? lineId = (soldLines.first['id'] as num).toInt();
     final qtyController = TextEditingController(text: '1');
     String condition = 'سليم';
@@ -1157,7 +1173,13 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   void _select(Map<String,Object?> row) { 
-    setState(() => _selectedId = row['id'] as int?); 
+    setState(() {
+      _selectedId = row['id'] as int?;
+      if (widget.screenKey == 'returns') {
+        _originalInvoiceLines = [];
+        _originalInvoiceNumber = null;
+      }
+    }); 
     for (final field in config.fields) { 
       _controllers[field]!.text = (field == 'password_hash' || field == 'confirm_password') ? '' : (row[field] ?? '').toString(); 
     }
@@ -1193,7 +1215,14 @@ class _DataScreenState extends State<DataScreen> {
 
   void _clear() { 
     for (final controller in _controllers.values) { controller.clear(); } 
-    setState(() { _selectedId = null; _applyDefaults(); }); 
+    setState(() {
+      _selectedId = null;
+      if (widget.screenKey == 'returns') {
+        _originalInvoiceLines = [];
+        _originalInvoiceNumber = null;
+      }
+      _applyDefaults();
+    }); 
   }
   
   void _message(String text) { 
@@ -1586,6 +1615,31 @@ class _DataScreenState extends State<DataScreen> {
             ),
           ],
           
+          if (widget.screenKey == 'returns' && _originalInvoiceLines.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            SectionCard(
+              title: 'بنود الفاتورة الأصلية ${_originalInvoiceNumber ?? ''}',
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: DataTable(
+                  columns: const [
+                    DataColumn(label: Text('الصنف')),
+                    DataColumn(label: Text('الكمية المباعة')),
+                    DataColumn(label: Text('الوحدة')),
+                    DataColumn(label: Text('السعر')),
+                    DataColumn(label: Text('إجمالي السطر')),
+                  ],
+                  rows: _originalInvoiceLines.map((line) => DataRow(cells: [
+                    DataCell(Text((line['product_name'] ?? '—').toString())),
+                    DataCell(Text(((line['qty'] as num?)?.toDouble() ?? 0).toStringAsFixed(3))),
+                    DataCell(Text((line['unit'] ?? 'قطعة').toString())),
+                    DataCell(Text(((line['price'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                    DataCell(Text(((line['line_total'] as num?)?.toDouble() ?? 0).toStringAsFixed(2))),
+                  ])).toList(),
+                ),
+              ),
+            ),
+          ],
           if (_selectedId != null && ['sales','purchases'].contains(widget.screenKey)) ...[
             const SizedBox(height: 12),
             Builder(builder: (context) {
