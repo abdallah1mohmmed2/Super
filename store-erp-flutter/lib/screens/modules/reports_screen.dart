@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:excel/excel.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../../data/database_helper.dart';
@@ -67,6 +68,70 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final picked=await showDatePicker(context:context,initialDate:initial,firstDate:DateTime(2000),lastDate:DateTime(2100));
     if(picked!=null) setState(() { if(start) _from=picked; else _to=picked; _future=_load(); });
   }
+  Future<void> _showPrintPreview(
+    List<Map<String, Object?>> sales,
+    List<Map<String, Object?>> purchases,
+    List<Map<String, Object?>> entries,
+    double stockValue,
+    double debit,
+    double credit,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('معاينة طباعة التقارير العامة والمحاسبية'),
+        content: SizedBox(
+          width: 760,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('الفترة: ${_from.toIso8601String().substring(0, 10)} إلى ${_to.toIso8601String().substring(0, 10)}'),
+                Text('صافي المبيعات: ${_money(_sum(sales, 'net'))}'),
+                Text('صافي المشتريات: ${_money(_sum(purchases, 'net'))}'),
+                Text('قيمة المخزون التقديرية: ${_money(stockValue)}'),
+                Text('إجمالي المدين: ${_money(debit)} — إجمالي الدائن: ${_money(credit)}'),
+                Text('فرق ميزان المراجعة: ${_money(debit - credit)}'),
+                const Divider(height: 24),
+                _previewTable('المبيعات', sales, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
+                _previewTable('المشتريات', purchases, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
+                _previewTable('القيود المحاسبية', entries, const ['entry_no', 'entry_date', 'source_type', 'description', 'status']),
+                const Text('هذه معاينة للطباعة؛ لا يتم إرسالها إلى طابعة من هذه النافذة.', style: TextStyle(color: Colors.blueGrey)),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          FilledButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق')),
+        ],
+      ),
+    );
+  }
+
+  Widget _previewTable(String title, List<Map<String, Object?>> rows, List<String> fields) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('$title (${rows.length})', style: const TextStyle(fontWeight: FontWeight.bold)),
+          if (rows.isEmpty)
+            const Text('لا توجد بيانات')
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: fields.map((field) => DataColumn(label: Text(field))).toList(),
+                rows: rows.take(40).map((row) => DataRow(
+                  cells: fields.map((field) => DataCell(Text((row[field] ?? '—').toString()))).toList(),
+                )).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override Widget build(BuildContext context) => FutureBuilder<_ReportData>(future:_future,builder:(context,snapshot){
     if(snapshot.connectionState==ConnectionState.waiting) return const Center(child:CircularProgressIndicator());
     if(snapshot.hasError) return Center(child:Text('تعذر تحميل التقارير: ${snapshot.error}'));
@@ -76,7 +141,12 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final stockValue=d.inventory.fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
     final debit=_sum(d.journalLines,'debit'), credit=_sum(d.journalLines,'credit');
     return ListView(padding:const EdgeInsets.all(18),children:[
-      const Text('التقارير العامة والمحاسبية',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold)),
+      Row(children: [
+        const Expanded(child: Text('التقارير العامة والمحاسبية',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),
+        OutlinedButton.icon(onPressed:()=>_showPrintPreview(sales,purchases,d.entries,stockValue,debit,credit),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),
+        const SizedBox(width:8),
+        OutlinedButton.icon(onPressed:()=>closeModule(context),icon:const Icon(Icons.close),label:const Text('إغلاق')),
+      ]),
       const SizedBox(height:12), Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:10,runSpacing:10,crossAxisAlignment:WrapCrossAlignment.center,children:[OutlinedButton.icon(onPressed:()=>_pickDate(true),icon:const Icon(Icons.calendar_month),label:Text('من: ${_from.toIso8601String().substring(0,10)}')),OutlinedButton.icon(onPressed:()=>_pickDate(false),icon:const Icon(Icons.calendar_month),label:Text('إلى: ${_to.toIso8601String().substring(0,10)}')),FilledButton.tonalIcon(onPressed:()=>setState(()=>_future=_load()),icon:const Icon(Icons.refresh),label:const Text('تحديث'))]))),
       const SizedBox(height:8), Wrap(spacing:12,runSpacing:12,children:[_metric('صافي المبيعات',_money(_sum(sales,'net')),Icons.point_of_sale),_metric('صافي المشتريات',_money(_sum(purchases,'net')),Icons.shopping_cart),_metric('قيمة المخزون التقديرية',_money(stockValue),Icons.inventory_2),_metric('ذمم العملاء',_money(_sum(d.customers,'balance')),Icons.people),_metric('ذمم الموردين',_money(_sum(d.suppliers,'balance')),Icons.local_shipping),_metric('فرق ميزان المراجعة',_money(debit-credit),Icons.account_balance)]),
       const SizedBox(height:18),
