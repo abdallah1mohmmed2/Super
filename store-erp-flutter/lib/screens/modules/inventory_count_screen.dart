@@ -157,7 +157,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
 
   Future<bool> _save() async {
     if (documentId == null) { msg('أنشئ مستندًا أولًا'); return false; }
-    if (status == 'مرحل' || status == 'ملغي') { msg('المستند المرحل أو الملغي لا يمكن تعديله'); return false; }
+    if (status != 'مسودة') { msg('لا يمكن تعديل مستند إلا إذا كان مسودة'); return false; }
     setState(() => busy = true);
     try {
       await db.update('inventory_documents', {
@@ -199,7 +199,6 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
     if (status != 'معتمد') { msg('اعتمد المستند قبل ترحيله'); return; }
     setState(() => busy = true);
     try {
-      if (!await _save()) return;
       final posterId = await _currentUserId();
       await db.postInventoryCount(documentId: documentId!, postedBy: posterId);
       if (mounted) setState(() => status = 'مرحل');
@@ -342,7 +341,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
           items: warehouses.map((w) => DropdownMenuItem(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString()))).toList(),
           onChanged: status == 'مسودة' ? (v) => setState(() => warehouseId = v) : null,
         )),
-        SizedBox(width: 220, child: TextField(controller: number, decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
+        SizedBox(width: 220, child: TextField(controller: number, enabled: status == 'مسودة', decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: status == 'مسودة' ? _pickDate : null, icon: const Icon(Icons.calendar_month), label: Text(dateText(inventoryDate))),
         if (widget.countType == 'monthlycount') SizedBox(width: 170, child: DropdownButtonFormField<int>(
           value: selectedMonth,
@@ -410,7 +409,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         ]);
       }).toList())))),
       Card(child: Padding(padding: const EdgeInsets.all(12), child: Wrap(spacing: 10, runSpacing: 8, children: [
-        OutlinedButton.icon(onPressed: busy || status == 'ملغي' || status == 'مرحل' ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
+        OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
         OutlinedButton.icon(onPressed: busy || status == 'ملغي' || status == 'مرحل' ? null : _cancelDocument, icon: const Icon(Icons.cancel_outlined), label: const Text('إلغاء')),
         OutlinedButton.icon(onPressed: busy || status != 'مسودة' ? null : _approve, icon: const Icon(Icons.verified_outlined), label: const Text('اعتماد')),
         FilledButton.icon(onPressed: busy || status != 'معتمد' ? null : _post, icon: const Icon(Icons.publish), label: const Text('ترحيل')),
@@ -423,7 +422,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       Text('ملخص الفرق: زيادة $increase • عجز $decrease • صافي قيمة الفرق ${diffValue.toStringAsFixed(2)}', style: const TextStyle(fontWeight: FontWeight.w600)),
       if (widget.countType == 'yearlycount') Text('نسبة الإنجاز: ${items.isEmpty ? 0 : (counted * 100 / items.length).round()}%'),
       if (widget.countType == 'monthlycount') Text('فترة الجرد: ${selectedYear}-${selectedMonth.toString().padLeft(2, '0')}'),
-      TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظات المستند', border: OutlineInputBorder())),
+      TextField(controller: notes, enabled: status == 'مسودة', decoration: const InputDecoration(labelText: 'ملاحظات المستند', border: OutlineInputBorder())),
     ]);
   }
 
