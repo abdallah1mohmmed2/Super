@@ -911,6 +911,14 @@ class DatabaseHelper {
     return db.transaction((txn) async {
       final existing = await txn.query('daily_closings', where:'close_date=?', whereArgs:[date], limit:1);
       if (existing.isNotEmpty) throw StateError('تم إقفال هذا اليوم مسبقًا');
+      final openSessions = await txn.rawQuery(
+        "SELECT COUNT(*) AS n FROM cash_sessions WHERE status=? AND date(opened_at) <= date(?)",
+        ['مفتوحة', date],
+      );
+      final openSessionCount = (openSessions.first['n'] as num?)?.toInt() ?? 0;
+      if (openSessionCount > 0) {
+        throw StateError('يوجد $openSessionCount جلسة صندوق مفتوحة؛ أقفل جلسات الصناديق قبل الإقفال اليومي');
+      }
       final pendingQueries = <List<Map<String, Object?>>>[
         await txn.rawQuery("SELECT COUNT(*) AS n FROM sales_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
         await txn.rawQuery("SELECT COUNT(*) AS n FROM purchases_header WHERE invoice_date LIKE ? AND status NOT IN ('مرحل','ملغي','ملغى')", ['$date%']),
