@@ -139,6 +139,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
           ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: clearForm),
           ActionButton('تحديث', icon: Icons.refresh, onPressed: reload),
           ActionButton('حذف', icon: Icons.delete_outline, onPressed: deleteCustomer),
+          ActionButton('إغلاق', icon: Icons.close, onPressed: () => closeModule(context)),
         ]),
         const SizedBox(height: 12),
         Expanded(
