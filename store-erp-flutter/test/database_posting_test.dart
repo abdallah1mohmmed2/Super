@@ -607,4 +607,188 @@ void main() {
     await expectJournalBalanced('PURCHASE', purchaseId);
   });
 
+
+  test('cancelled sales, purchases and returns cannot be posted', () async {
+    final db = await helper.database;
+    final productId = await createProduct();
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    final sessionId = await createOpenSession();
+    final cancelledSaleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-CANCELLED-SALE-1',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': sessionId,
+      'cashier': 'test',
+      'net': 10,
+      'paid': 10,
+      'status': 'ملغي',
+    });
+    final saleLine = {
+      'product_id': productId,
+      'qty': 1.0,
+      'factor': 1.0,
+    };
+    await db.insert('sales_lines', {
+      'sales_id': cancelledSaleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 1,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 10,
+    });
+    await expectLater(
+      helper.postSale(
+        saleId: cancelledSaleId,
+        warehouseId: 1,
+        cashBoxId: 1,
+        lines: [saleLine],
+        net: 10,
+        paid: 10,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final supplierId = await db.insert('suppliers', {'name': 'مورد ملغي'});
+    final cancelledPurchaseId = await db.insert('purchases_header', {
+      'invoice_no': 'TEST-CANCELLED-PURCHASE-1',
+      'invoice_date': today(),
+      'supplier_id': supplierId,
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'net': 10,
+      'paid': 0,
+      'status': 'ملغي',
+    });
+    await db.insert('purchases_lines', {
+      'purchase_id': cancelledPurchaseId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 1,
+      'cost': 4,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 4,
+    });
+    await expectLater(
+      helper.postPurchase(
+        purchaseId: cancelledPurchaseId,
+        warehouseId: 1,
+        cashBoxId: 1,
+        supplierId: supplierId,
+        net: 10,
+        paid: 0,
+        lines: [
+          {'product_id': productId, 'qty': 1, 'factor': 1, 'cost': 4},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final normalSaleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-RETURN-ORIGINAL-1',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': sessionId,
+      'cashier': 'test',
+      'net': 10,
+      'paid': 10,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': normalSaleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 1,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 10,
+    });
+    await helper.postSale(
+      saleId: normalSaleId,
+      warehouseId: 1,
+      cashBoxId: 1,
+      lines: [saleLine],
+      net: 10,
+      paid: 10,
+    );
+    final cancelledReturnId = await db.insert('sales_returns', {
+      'return_no': 'TEST-CANCELLED-RETURN-1',
+      'sales_id': normalSaleId,
+      'warehouse_id': 1,
+      'return_date': today(),
+      'total': 10,
+      'status': 'ملغي',
+    });
+    await db.insert('sales_return_lines', {
+      'return_id': cancelledReturnId,
+      'product_id': productId,
+      'qty': 1,
+      'price': 10,
+      'condition': 'سليم',
+    });
+    await expectLater(
+      helper.postSalesReturn(
+        returnId: cancelledReturnId,
+        lines: [
+          {'product_id': productId, 'qty': 1.0, 'price': 10.0, 'good': 1.0},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final cancelledSale = await helper.query(
+      'sales_header',
+      where: 'id=?',
+      whereArgs: [cancelledSaleId],
+    );
+    final cancelledPurchase = await helper.query(
+      'purchases_header',
+      where: 'id=?',
+      whereArgs: [cancelledPurchaseId],
+    );
+    final cancelledReturn = await helper.query(
+      'sales_returns',
+      where: 'id=?',
+      whereArgs: [cancelledReturnId],
+    );
+    final stock = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    expect(cancelledSale.single['status'], 'ملغي');
+    expect(cancelledPurchase.single['status'], 'ملغي');
+    expect(cancelledReturn.single['status'], 'ملغي');
+    // Only the explicitly posted original sale reduces stock.
+    expect((stock.single['qty'] as num).toDouble(), 4);
+    expect(
+      await helper.query(
+        'accounting_entries',
+        where: 'source_type=? AND source_id=?',
+        whereArgs: ['PURCHASE', cancelledPurchaseId],
+      ),
+      isEmpty,
+    );
+    expect(
+      await helper.query(
+        'accounting_entries',
+        where: 'source_type=? AND source_id=?',
+        whereArgs: ['SALES_RETURN', cancelledReturnId],
+      ),
+      isEmpty,
+    );
+  });
+
 }
