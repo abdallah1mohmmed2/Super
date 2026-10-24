@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
@@ -259,6 +260,6 @@ class _BackupScreenState extends State<BackupScreen> {
     ]),
     if (_progress != null) ...[const SizedBox(height: 8), LinearProgressIndicator(value: _progress)],
     Card(child: Padding(padding: const EdgeInsets.all(14), child: Text(_status, style: const TextStyle(fontWeight: FontWeight.w500)))),
-    Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('خروج'))),
+    Align(alignment: AlignmentDirectional.centerEnd, child: TextButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('خروج'))),
   ]);
 }
