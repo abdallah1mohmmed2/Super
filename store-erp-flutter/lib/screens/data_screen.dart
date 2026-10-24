@@ -223,12 +223,14 @@ class _DataScreenState extends State<DataScreen> {
           decoration: InputDecoration(
             labelText: fieldLabel(field),
             prefixIcon: Icon(_icon(field)),
-            helperText: field == 'cash_session_id' &&
-                    !options.any((row) => row['status'] == 'مفتوحة')
-                ? 'لا توجد جلسات مفتوحة؛ افتح جلسة من إدارة الصناديق'
-                : options.isEmpty
-                    ? (_referencesLoading ? 'جارٍ تحميل الخيارات...' : 'لا توجد سجلات مرجعية؛ أضفها من شاشتها أولاً')
-                    : null,
+            helperText: _referencesLoading
+                ? 'جارٍ تحميل الخيارات...'
+                : field == 'cash_session_id' &&
+                        !options.any((row) => row['status'] == 'مفتوحة')
+                    ? 'لا توجد جلسات مفتوحة؛ افتح جلسة من إدارة الصناديق'
+                    : options.isEmpty
+                        ? 'لا توجد سجلات مرجعية؛ أضفها من شاشتها أولاً'
+                        : null,
           ),
           hint: Text(options.isEmpty ? 'لا توجد خيارات' : 'اختر من القائمة'),
           items: options.map((row) {
