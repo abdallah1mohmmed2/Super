@@ -232,6 +232,14 @@ class _DataScreenState extends State<DataScreen> {
                     if (sessions.isNotEmpty) {
                       _controllers['cash_box_id']!.text = (sessions.first['cash_box_id'] ?? '').toString();
                     }
+                  } else if (field == 'cash_box_id' &&
+                      _controllers.containsKey('cash_session_id')) {
+                    final selectedSession = int.tryParse(_controllers['cash_session_id']!.text);
+                    final sessions = _referenceOptions['cash_session_id'] ?? const <Map<String, Object?>>[];
+                    final match = sessions.where((row) =>
+                      (row['id'] as num?)?.toInt() == selectedSession &&
+                      (row['cash_box_id'] as num?)?.toInt() == value);
+                    if (match.isEmpty) _controllers['cash_session_id']!.clear();
                   }
                   setState(() {});
                 },
