@@ -670,10 +670,34 @@ class DatabaseHelper {
       final hasExplicitSettlement = settlementRows.isNotEmpty;
       double dueReduction;
       double cashRefund;
+      var bankRefund = 0.0;
+      var checkRefund = 0.0;
       if (hasExplicitSettlement) {
-        dueReduction = settlementRows.where((row) => row['method'] == 'على الرصيد').fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
-        cashRefund = settlementRows.where((row) => row['method'] != 'على الرصيد').fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
-        if ((dueReduction + cashRefund - total).abs() > 0.005) throw StateError('أكمل تسوية المرتجع؛ يجب أن يساوي مجموع الدفعات إجمالي المرتجع');
+        dueReduction = 0;
+        cashRefund = 0;
+        for (final settlement in settlementRows) {
+          final amount = (settlement['amount'] as num?)?.toDouble() ?? 0;
+          switch ((settlement['method'] ?? 'نقدي').toString()) {
+            case 'على الرصيد':
+              dueReduction += amount;
+              break;
+            case 'نقدي':
+              cashRefund += amount;
+              break;
+            case 'بطاقة':
+            case 'تحويل بنكي':
+              bankRefund += amount;
+              break;
+            case 'شيك':
+              checkRefund += amount;
+              break;
+            default:
+              throw StateError('طريقة تسوية غير مدعومة في المرتجع: ${settlement['method']}');
+          }
+        }
+        if ((dueReduction + cashRefund + bankRefund + checkRefund - total).abs() > 0.005) {
+          throw StateError('أكمل تسوية المرتجع؛ يجب أن يساوي مجموع الدفعات إجمالي المرتجع');
+        }
         if (dueReduction > 0 && customerId == null) throw StateError('لا يمكن تحويل مبلغ إلى رصيد عميل دون تحديد العميل');
         if (customerId != null && dueReduction > currentCustomerBalance + 0.005) {
           throw StateError('مبلغ التسوية على رصيد العميل يتجاوز رصيده الحالي');
@@ -701,7 +725,13 @@ class DatabaseHelper {
       }
       await txn.update('sales_returns', {'status':'مرحل','total':total}, where:'id=?', whereArgs:[returnId]);
       await _createJournal(txn,'SALES_RETURN',returnId,h['return_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'ترحيل مرتجع مبيعات ${h['return_no'] ?? returnId}',[
-        ['4100','مردودات المبيعات',total,0],['1000','الصندوق',0,cashRefund],['1200','تخفيض ذمم العميل',0,dueReduction],['1100','المخزون',costTotal,0],['5000','تكلفة البضاعة المباعة',0,costTotal]
+        ['4100','مردودات المبيعات',total,0],
+        ['1000','الصندوق',0,cashRefund],
+        ['1020','البنك والتحصيلات الإلكترونية',0,bankRefund],
+        ['2030','شيكات صادرة مستحقة',0,checkRefund],
+        ['1200','تخفيض ذمم العميل',0,dueReduction],
+        ['1100','المخزون',costTotal,0],
+        ['5000','تكلفة البضاعة المباعة',0,costTotal]
       ]);
       await txn.insert('audit_log', {'action':'ترحيل مرتجع مبيعات','entity':'sales_returns','entity_id':returnId});
     });
