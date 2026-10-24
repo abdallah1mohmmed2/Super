@@ -592,6 +592,42 @@ class _DataScreenState extends State<DataScreen> {
     await DatabaseHelper.instance.update(table, {'subtotal':subtotal,'net':net}, where:'id=?', whereArgs:[_selectedId]);
   }
 
+  Future<void> _pickDateIntoController(BuildContext dialogContext, TextEditingController controller) async {
+    final parsed = DateTime.tryParse(controller.text.trim());
+    final now = DateTime.now();
+    final candidate = parsed ?? now;
+    final initial = candidate.isBefore(DateTime(2000))
+        ? DateTime(2000)
+        : candidate.isAfter(DateTime(2100))
+            ? DateTime(2100)
+            : candidate;
+    final picked = await showDatePicker(
+      context: dialogContext,
+      initialDate: initial,
+      firstDate: DateTime(2000),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      controller.text = '${picked.year.toString().padLeft(4, '0')}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+    }
+  }
+
+  Widget _dateControllerField(BuildContext dialogContext, TextEditingController controller, String label) {
+    return TextField(
+      controller: controller,
+      readOnly: true,
+      onTap: () => _pickDateIntoController(dialogContext, controller),
+      decoration: InputDecoration(
+        labelText: label,
+        suffixIcon: IconButton(
+          tooltip: 'اختيار التاريخ',
+          onPressed: () => _pickDateIntoController(dialogContext, controller),
+          icon: const Icon(Icons.calendar_month_outlined),
+        ),
+      ),
+    );
+  }
+
   Future<void> _addLine() async {
     if (_selectedId != null) { 
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1); 
@@ -761,9 +797,9 @@ class _DataScreenState extends State<DataScreen> {
                     const SizedBox(height: 10),
                     TextField(controller: batchController, decoration: const InputDecoration(labelText: 'رقم التشغيلة')),
                     const SizedBox(height: 10),
-                    TextField(controller: productionController, decoration: const InputDecoration(labelText: 'تاريخ الإنتاج YYYY-MM-DD')),
+                    _dateControllerField(ctx, productionController, 'تاريخ الإنتاج'),
                     const SizedBox(height: 10),
-                    TextField(controller: expiryController, decoration: const InputDecoration(labelText: 'تاريخ الانتهاء YYYY-MM-DD')),
+                    _dateControllerField(ctx, expiryController, 'تاريخ الانتهاء'),
                   ],
                   if (!isSale && !isPurchase) ...[
                     const SizedBox(height: 10),
