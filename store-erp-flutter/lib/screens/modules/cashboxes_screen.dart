@@ -285,6 +285,8 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         OutlinedButton.icon(onPressed: _busy ? null : _reload, icon: const Icon(Icons.refresh), label: const Text('تحديث')),
         const SizedBox(width: 8),
         FilledButton.icon(onPressed: _busy ? null : _newBox, icon: const Icon(Icons.add), label: const Text('صندوق جديد')),
+        const SizedBox(width: 8),
+        OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
       ]),
       const SizedBox(height: 12),
       Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
