@@ -83,9 +83,7 @@ class _DataScreenState extends State<DataScreen> {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
         String? where;
-        if (entry.key == 'cash_session_id') {
-          where = "status='مفتوحة'";
-        } else if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
@@ -225,17 +223,25 @@ class _DataScreenState extends State<DataScreen> {
           decoration: InputDecoration(
             labelText: fieldLabel(field),
             prefixIcon: Icon(_icon(field)),
-            helperText: options.isEmpty
-                ? (_referencesLoading ? 'جارٍ تحميل الخيارات...' : 'لا توجد سجلات مرجعية؛ أضفها من شاشتها أولاً')
-                : null,
+            helperText: field == 'cash_session_id' &&
+                    !options.any((row) => row['status'] == 'مفتوحة')
+                ? 'لا توجد جلسات مفتوحة؛ افتح جلسة من إدارة الصناديق'
+                : options.isEmpty
+                    ? (_referencesLoading ? 'جارٍ تحميل الخيارات...' : 'لا توجد سجلات مرجعية؛ أضفها من شاشتها أولاً')
+                    : null,
           ),
           hint: Text(options.isEmpty ? 'لا توجد خيارات' : 'اختر من القائمة'),
           items: options.map((row) {
             final id = (row['id'] as num).toInt();
             final label = (row[reference.$2] ?? 'بدون اسم').toString();
+            final sessionClosed = field == 'cash_session_id' && row['status'] != 'مفتوحة';
             return DropdownMenuItem<int>(
               value: id,
-              child: Text('$label  (#$id)', overflow: TextOverflow.ellipsis),
+              enabled: !sessionClosed || id == selectedValue,
+              child: Text(
+                '$label  (#$id)${sessionClosed ? ' — مغلقة' : ''}',
+                overflow: TextOverflow.ellipsis,
+              ),
             );
           }).toList(),
           onChanged: options.isEmpty
