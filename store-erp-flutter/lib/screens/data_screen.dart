@@ -867,6 +867,12 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _deletePayment(Map<String,Object?> row) async {
     if (_selectedId == null) return;
+    final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
+    final headers = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (headers.isEmpty || headers.first['status'] == 'مرحل') {
+      _message('لا يمكن حذف دفعات مستند غير موجود أو مرحل');
+      return;
+    }
     final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('حذف الدفعة'), content: const Text('هل تريد حذف هذه الدفعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
     if (yes != true || !mounted) return;
     try {
