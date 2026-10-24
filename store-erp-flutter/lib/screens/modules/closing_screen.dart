@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/database_helper.dart';
@@ -119,6 +120,12 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
             onPressed: _busy ? null : _reload,
             icon: const Icon(Icons.refresh),
             label: const Text('تحديث سجل الإقفالات'),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: () => closeModule(context),
+            icon: const Icon(Icons.close),
+            label: const Text('إغلاق'),
           ),
         ]),
         const SizedBox(height: 8),
