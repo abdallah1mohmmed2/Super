@@ -908,30 +908,37 @@ class DatabaseHelper {
       if (warehouseId == null) throw StateError('حدد المخزن');
       final items = await txn.query('inventory_items', where:'document_id=?', whereArgs:[documentId]);
       if (items.isEmpty) throw StateError('مستند الجرد لا يحتوي على أصناف');
-      double adjustmentCost = 0;
+      double increaseCost = 0;
+      double decreaseCost = 0;
       for (final item in items) {
         final productId = (item['product_id'] as num).toInt();
         final countQty = (item['count_qty'] as num?)?.toDouble() ?? 0;
+        if (countQty < 0) throw StateError('لا يمكن ترحيل كمية جرد سالبة للصنف $productId');
         final stocks = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
         final bookQty = stocks.isEmpty ? 0.0 : (stocks.first['qty'] as num).toDouble();
         final difference = countQty - bookQty;
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
         if (products.isEmpty) throw StateError('صنف غير موجود: $productId');
         final cost = (products.first['cost_price'] as num?)?.toDouble() ?? 0;
-        adjustmentCost += difference * cost;
+        final differenceCost = difference * cost;
+        if (differenceCost > 0) increaseCost += differenceCost;
+        if (differenceCost < 0) decreaseCost += -differenceCost;
         if (stocks.isEmpty) { await txn.insert('inventory', {'product_id':productId,'warehouse_id':warehouseId,'qty':countQty}); }
         else { await txn.update('inventory', {'qty':countQty}, where:'id=?', whereArgs:[stocks.first['id']]); }
-        await txn.update('inventory_items', {'book_qty':bookQty,'difference':difference,'difference_cost':difference*cost}, where:'id=?', whereArgs:[item['id']]);
+        await txn.update('inventory_items', {'book_qty':bookQty,'difference':difference,'difference_cost':differenceCost}, where:'id=?', whereArgs:[item['id']]);
       }
       await txn.update('inventory_documents', {'status':'مرحل','posted_by':postedBy}, where:'id=?', whereArgs:[documentId]);
-      if (adjustmentCost >= 0) {
-        await _createJournal(txn,'COUNT',documentId,h['inventory_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'تسوية جرد ${h['document_no'] ?? documentId}',[
-          ['1100','المخزون',adjustmentCost,0],['3000','فروقات الجرد',0,adjustmentCost]
-        ]);
-      } else {
-        await _createJournal(txn,'COUNT',documentId,h['inventory_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'تسوية جرد ${h['document_no'] ?? documentId}',[
-          ['5100','عجز الجرد',-adjustmentCost,0],['1100','المخزون',0,-adjustmentCost]
-        ]);
+      final journalLines = <List<Object>>[];
+      if (increaseCost > 0.005) {
+        journalLines.add(['1100','المخزون',increaseCost,0]);
+        journalLines.add(['3000','فروقات الجرد - زيادة',0,increaseCost]);
+      }
+      if (decreaseCost > 0.005) {
+        journalLines.add(['5100','عجز الجرد',decreaseCost,0]);
+        journalLines.add(['1100','المخزون',0,decreaseCost]);
+      }
+      if (journalLines.isNotEmpty) {
+        await _createJournal(txn,'COUNT',documentId,h['inventory_date']?.toString() ?? DateTime.now().toIso8601String().substring(0,10),'تسوية جرد ${h['document_no'] ?? documentId}',journalLines);
       }
       await txn.insert('audit_log', {'action':'ترحيل جرد وتسوية أرصدة','entity':'inventory_documents','entity_id':documentId});
     });
