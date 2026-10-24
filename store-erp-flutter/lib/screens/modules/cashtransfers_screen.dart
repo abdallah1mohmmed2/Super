@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../widgets/common_widgets.dart';
 import 'package:provider/provider.dart';
 
 import '../../data/database_helper.dart';
@@ -202,7 +203,7 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
           const SizedBox(width: 8),
           FilledButton.icon(onPressed: _busy ? null : _newTransfer, icon: const Icon(Icons.add), label: const Text('جديد')),
           const SizedBox(width: 8),
-          OutlinedButton.icon(onPressed: () => Navigator.maybePop(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
+          OutlinedButton.icon(onPressed: () => closeModule(context), icon: const Icon(Icons.close), label: const Text('إغلاق')),
         ]),
         const SizedBox(height: 12),
         Card(child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
