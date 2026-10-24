@@ -27,7 +27,7 @@ class ModuleNavigationScope extends InheritedWidget {
   });
 
   static ModuleNavigationScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<ModuleNavigationScope>();
+      context.getInheritedWidgetOfExactType<ModuleNavigationScope>();
 
   @override
   bool updateShouldNotify(ModuleNavigationScope oldWidget) =>
