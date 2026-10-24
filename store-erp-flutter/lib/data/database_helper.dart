@@ -842,7 +842,7 @@ class DatabaseHelper {
     });
   }
 
-  Future<void> postDamage({required int documentId, required List<Map<String, num>> lines}) async {
+  Future<void> postDamage({required int documentId, required List<Map<String, Object?>> lines}) async {
     final db = await database;
     await db.transaction((txn) async {
       final docs = await txn.query('damage_documents', where:'id=?', whereArgs:[documentId], limit:1);
@@ -858,15 +858,27 @@ class DatabaseHelper {
       if (warehouseId == null || lines.isEmpty) throw StateError('حدد المخزن والأصناف');
       double totalCost = 0;
       for (final line in lines) {
-        final productId = line['product_id']!.toInt();
-        final qty = line['qty']!.toDouble();
+        final productId = (line['product_id'] as num).toInt();
+        final qty = (line['qty'] as num).toDouble();
+        final batchId = (line['batch_id'] as num?)?.toInt();
         if (qty <= 0) throw StateError('كمية التالف يجب أن تكون أكبر من صفر');
-        final stocks = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
-        if (stocks.isEmpty || (stocks.first['qty'] as num).toDouble() < qty) throw StateError('رصيد المخزون غير كافٍ للصنف $productId');
-        await txn.update('inventory', {'qty':(stocks.first['qty'] as num).toDouble()-qty}, where:'id=?', whereArgs:[stocks.first['id']]);
-        await _consumeTrackedBatches(txn, productId: productId, warehouseId: warehouseId, qty: qty);
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
         if (products.isEmpty) throw StateError('الصنف غير موجود: $productId');
+        if (((products.first['batch_tracking'] as num?)?.toInt() ?? 0) == 1 && batchId == null) {
+          throw StateError('الصنف $productId يتطلب تحديد الدفعة قبل الترحيل');
+        }
+        final stocks = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
+        if (stocks.isEmpty || (stocks.first['qty'] as num).toDouble() < qty) throw StateError('رصيد المخزون غير كافٍ للصنف $productId');
+        if (batchId != null) {
+          final batches = await txn.query('product_batches', where:'id=? AND product_id=? AND warehouse_id=?', whereArgs:[batchId,productId,warehouseId], limit:1);
+          if (batches.isEmpty) throw StateError('الدفعة المحددة غير موجودة أو لا تتبع هذا الصنف والمخزن');
+          final available = (batches.first['qty'] as num?)?.toDouble() ?? 0;
+          if (available < qty) throw StateError('رصيد الدفعة المحددة غير كافٍ للصنف $productId');
+          await txn.update('product_batches', {'qty':available-qty}, where:'id=?', whereArgs:[batchId]);
+        } else {
+          await _consumeTrackedBatches(txn, productId: productId, warehouseId: warehouseId, qty: qty);
+        }
+        await txn.update('inventory', {'qty':(stocks.first['qty'] as num).toDouble()-qty}, where:'id=?', whereArgs:[stocks.first['id']]);
         final enteredCost = (line['estimated_cost'] as num?)?.toDouble();
         final cost = enteredCost ?? ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
         if (cost < 0) throw StateError('تكلفة التالف لا يمكن أن تكون سالبة');
