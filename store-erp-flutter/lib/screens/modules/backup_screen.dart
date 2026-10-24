@@ -97,11 +97,11 @@ class _BackupScreenState extends State<BackupScreen> {
     if (path != null && mounted) setState(() => _restorePath.text = path);
   }
 
-  Future<void> _createBackup({bool safety = false}) async {
-    if (_busy) return;
+  Future<bool> _createBackup({bool safety = false}) async {
+    if (_busy) return false;
     final directoryPath = _folder.text.trim();
     final rawName = _filename.text.trim();
-    if (directoryPath.isEmpty || rawName.isEmpty) { _message('حدد مجلد الحفظ واسم الملف أولًا'); return; }
+    if (directoryPath.isEmpty || rawName.isEmpty) { _message('حدد مجلد الحفظ واسم الملف أولًا'); return false; }
     final safeName = p.basenameWithoutExtension(rawName).replaceAll(RegExp(r'[^a-zA-Z0-9_\-\u0600-\u06FF]'), '_');
     final stamp = DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
     final name = safety ? 'safety_$stamp.db' : '${safeName}_$stamp.db';
@@ -115,16 +115,18 @@ class _BackupScreenState extends State<BackupScreen> {
       setState(() { _progress = 0.45; _status = 'نسخ قاعدة البيانات...'; });
       final target = await source.copy(p.join(directory.path, name));
       setState(() { _progress = 0.8; _status = 'التحقق من الملف...'; });
-      if (_verify || _verifyDaily) {
+      if (_verify || safety) {
         await _db.verifyDatabaseFile(target.path);
       }
       await _db.insert('backup_history', {'file_path': target.path, 'status': 'نجاح'});
       if (mounted) setState(() { _progress = 1; _status = 'اكتملت النسخة: ${target.path}'; });
       await _reloadHistory();
       _message(safety ? 'تم إنشاء نسخة الأمان قبل الاسترجاع' : 'تم إنشاء النسخة الاحتياطية بنجاح');
+      return true;
     } catch (e) {
       if (mounted) setState(() => _status = 'فشلت العملية: $e');
       _message('تعذر إنشاء النسخة الاحتياطية: $e');
+      return false;
     } finally { if (mounted) setState(() { _busy = false; _progress = null; }); }
   }
 
@@ -141,7 +143,13 @@ class _BackupScreenState extends State<BackupScreen> {
       ],
     ));
     if (confirmed != true || !mounted) return;
-    if (_safetyBackup) await _createBackup(safety: true);
+    if (_safetyBackup) {
+      final safetyCreated = await _createBackup(safety: true);
+      if (!safetyCreated) {
+        if (mounted) _message('أُلغي الاسترجاع لأن إنشاء نسخة الأمان لم ينجح. قاعدة البيانات الحالية لم تُستبدل.');
+        return;
+      }
+    }
     if (!mounted) return;
     setState(() { _busy = true; _progress = 0.2; _status = 'التحقق من النسخة واستبدال قاعدة البيانات...'; });
     try {
