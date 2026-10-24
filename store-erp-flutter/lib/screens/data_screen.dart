@@ -979,7 +979,15 @@ class _DataScreenState extends State<DataScreen> {
     final payments = await DatabaseHelper.instance.query('document_payments', where: 'document_type=? AND document_id=?', whereArgs: [_paymentDocumentType, _selectedId]);
     final paid = payments.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
     final table = widget.screenKey == 'sales' ? 'sales_header' : 'purchases_header';
-    await DatabaseHelper.instance.update(table, {'paid': paid}, where: 'id=?', whereArgs: [_selectedId]);
+    final methods = payments.map((row) => (row['method'] ?? 'نقدي').toString()).toSet();
+    final paymentMethod = methods.isEmpty ? null : methods.length == 1 ? methods.first : 'متعدد';
+    await DatabaseHelper.instance.update(table, {
+      'paid': paid,
+      if (paymentMethod != null) 'payment_method': paymentMethod,
+    }, where: 'id=?', whereArgs: [_selectedId]);
+    if (paymentMethod != null && _controllers.containsKey('payment_method')) {
+      _controllers['payment_method']!.text = paymentMethod;
+    }
   }
 
   Future<void> _loadOriginalInvoice() async {
