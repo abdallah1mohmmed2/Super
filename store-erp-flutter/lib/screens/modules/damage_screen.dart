@@ -56,12 +56,12 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   void _selectProduct(int? value) {
     final selected = products.where((p) => (p['id'] as num?)?.toInt() == value).firstOrNull;
     final options = productUnits.where((u) => (u['product_id'] as num?)?.toInt() == value).toList();
-    final unit = options.isEmpty ? null : options.first;
+    final baseUnit = options.where((u) => (((u['factor'] as num?)?.toDouble() ?? 1) - 1).abs() < 0.000001).firstOrNull;
     setState(() {
       productId = value;
-      unitId = (unit?['id'] as num?)?.toInt();
-      unitFactor = ((unit?['factor'] as num?)?.toDouble() ?? 1).clamp(0.000001, double.infinity).toDouble();
-      _cost.text = (n(selected?['cost_price']) * unitFactor).toStringAsFixed(2);
+      unitId = (baseUnit?['id'] as num?)?.toInt();
+      unitFactor = 1;
+      _cost.text = n(selected?['cost_price']).toStringAsFixed(2);
     });
     _loadBatches();
   }
