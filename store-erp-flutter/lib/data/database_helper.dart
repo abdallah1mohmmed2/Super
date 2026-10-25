@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 17,
+        version: 16,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -31,7 +31,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 17, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 16, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -191,12 +191,6 @@ class DatabaseHelper {
       }
       await db.execute('UPDATE inventory_items SET counted=1 WHERE ABS(COALESCE(count_qty,0)-COALESCE(book_qty,0))>0.000001 OR ABS(COALESCE(count_qty2,0)-COALESCE(book_qty,0))>0.000001');
     }
-    if (oldVersion < 17) {
-      final returnLineColumns = await db.rawQuery('PRAGMA table_info(sales_return_lines)');
-      if (!returnLineColumns.any((column) => column['name'] == 'factor')) {
-        await db.execute('ALTER TABLE sales_return_lines ADD COLUMN factor REAL NOT NULL DEFAULT 1');
-      }
-    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -216,7 +210,7 @@ class DatabaseHelper {
       '''CREATE TABLE purchases_header(id INTEGER PRIMARY KEY AUTOINCREMENT, invoice_no TEXT UNIQUE, external_no TEXT, invoice_date TEXT NOT NULL, supplier_id INTEGER REFERENCES suppliers(id), warehouse_id INTEGER REFERENCES warehouses(id), cash_box_id INTEGER REFERENCES cash_boxes(id), payment_method TEXT DEFAULT 'نقدي', subtotal REAL DEFAULT 0, discount REAL DEFAULT 0, tax REAL DEFAULT 0, net REAL DEFAULT 0, paid REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE purchases_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, purchase_id INTEGER NOT NULL REFERENCES purchases_header(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), unit TEXT, factor REAL DEFAULT 1, qty REAL NOT NULL, cost REAL NOT NULL, discount REAL DEFAULT 0, tax REAL DEFAULT 0, batch_no TEXT, production_date TEXT, expiry_date TEXT, line_total REAL NOT NULL)''',
       '''CREATE TABLE sales_returns(id INTEGER PRIMARY KEY AUTOINCREMENT, return_no TEXT UNIQUE, sales_id INTEGER REFERENCES sales_header(id), customer_id INTEGER REFERENCES customers(id), warehouse_id INTEGER REFERENCES warehouses(id), return_date TEXT, total REAL DEFAULT 0, status TEXT DEFAULT 'مسودة', reason TEXT)''',
-      '''CREATE TABLE sales_return_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, factor REAL NOT NULL DEFAULT 1, price REAL NOT NULL, condition TEXT DEFAULT 'سليم')''',
+      '''CREATE TABLE sales_return_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, price REAL NOT NULL, condition TEXT DEFAULT 'سليم')''',
       '''CREATE TABLE warehouse_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, transfer_date TEXT, from_warehouse_id INTEGER REFERENCES warehouses(id), to_warehouse_id INTEGER REFERENCES warehouses(id), status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE warehouse_transfer_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_id INTEGER NOT NULL REFERENCES warehouse_transfers(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, factor REAL DEFAULT 1, unit TEXT)''',
       '''CREATE TABLE damage_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, document_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), document_type TEXT, cause TEXT, status TEXT DEFAULT 'مسودة')''',
@@ -734,25 +728,15 @@ class DatabaseHelper {
       }
       double total = 0, costTotal = 0;
       final requestedByProduct=<int,double>{};
-      for(final line in lines){
-        final id = line['product_id']!.toInt();
-        final q = line['qty']!.toDouble();
-        final factor = (line['factor'] ?? 1).toDouble();
-        if (q <= 0 || factor <= 0) throw StateError('كمية المرتجع ومعامل الوحدة يجب أن يكونا أكبر من صفر');
-        requestedByProduct[id] = (requestedByProduct[id] ?? 0) + q * factor;
-      }
+      for(final line in lines){final id=line['product_id']!.toInt();final q=line['qty']!.toDouble();if(q<=0)throw StateError('كمية المرتجع يجب أن تكون أكبر من صفر');requestedByProduct[id]=(requestedByProduct[id]??0)+q;}
       final checkedProducts=<int>{};
       final maxOriginalPriceByProduct=<int,double>{};
       for (final line in lines) {
-        final productId = line['product_id']!.toInt();
-        final qty = line['qty']!.toDouble();
-        final factor = (line['factor'] ?? 1).toDouble();
-        final baseQty = qty * factor;
-        final price = (line['price'] ?? 0).toDouble();
-        if (qty <= 0 || factor <= 0 || price < 0) throw StateError('تحقق من كمية ومعامل وحدة وسعر المرتجع');
+        final productId = line['product_id']!.toInt(); final qty = line['qty']!.toDouble(); final price = (line['price'] ?? 0).toDouble();
+        if (qty <= 0 || price < 0) throw StateError('تحقق من كمية وسعر المرتجع');
         if(checkedProducts.add(productId)) {
           final sold = await txn.rawQuery('SELECT COALESCE(SUM(qty*COALESCE(factor,1)),0) AS qty FROM sales_lines WHERE sales_id=? AND product_id=?',[originalId,productId]);
-          final returned = await txn.rawQuery('SELECT COALESCE(SUM(l.qty*COALESCE(l.factor,1)),0) AS qty FROM sales_return_lines l JOIN sales_returns r ON r.id=l.return_id WHERE r.sales_id=? AND r.status=? AND l.product_id=?',[originalId,'مرحل',productId]);
+          final returned = await txn.rawQuery('SELECT COALESCE(SUM(l.qty),0) AS qty FROM sales_return_lines l JOIN sales_returns r ON r.id=l.return_id WHERE r.sales_id=? AND r.status=? AND l.product_id=?',[originalId,'مرحل',productId]);
           final soldQty = (sold.first['qty'] as num).toDouble(); final returnedQty = (returned.first['qty'] as num).toDouble();
           if ((requestedByProduct[productId]??0) > soldQty-returnedQty+0.000001) throw StateError('كمية المرتجع تتجاوز الكمية المباعة للصنف $productId');
           final originalLines = await txn.query('sales_lines', where:'sales_id=? AND product_id=?', whereArgs:[originalId, productId]);
@@ -765,7 +749,7 @@ class DatabaseHelper {
           }
           maxOriginalPriceByProduct[productId] = maxOriginalPrice;
         }
-        if (price / factor > (maxOriginalPriceByProduct[productId] ?? 0) + 0.005) {
+        if (price > (maxOriginalPriceByProduct[productId] ?? 0) + 0.005) {
           throw StateError('سعر استرجاع الصنف $productId لا يمكن أن يتجاوز سعر بيعه الأصلي للوحدة الأساسية');
         }
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
@@ -773,9 +757,9 @@ class DatabaseHelper {
         final isGood = (line['good'] ?? 1).toInt() == 1;
         if (isGood) {
           final stock = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
-          if (stock.isEmpty) await txn.insert('inventory', {'product_id':productId,'warehouse_id':warehouseId,'qty':baseQty});
-          else await txn.update('inventory', {'qty':(stock.first['qty'] as num).toDouble()+baseQty}, where:'id=?', whereArgs:[stock.first['id']]);
-          costTotal += baseQty * ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
+          if (stock.isEmpty) await txn.insert('inventory', {'product_id':productId,'warehouse_id':warehouseId,'qty':qty});
+          else await txn.update('inventory', {'qty':(stock.first['qty'] as num).toDouble()+qty}, where:'id=?', whereArgs:[stock.first['id']]);
+          costTotal += qty * ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
         }
         total += qty*price;
       }
