@@ -111,7 +111,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final rows = grouped.values.toList();
     rows.sort((a,b) => (b['إجمالي المبيعات'] as num).compareTo(a['إجمالي المبيعات'] as num));
     if (_selectedReport == 'المنتجات الأقل مبيعًا' || _selectedReport == 'الأقسام الأقل مبيعًا') {
-      rows.reverse();
+      return rows.reversed.toList();
     }
     return rows;
   }
