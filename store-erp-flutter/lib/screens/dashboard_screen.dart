@@ -130,15 +130,23 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final categoryId = (productById[productId]?['category_id'] as num?)?.toInt();
       if (categoryId != null) categoryQty[categoryId] = (categoryQty[categoryId] ?? 0) + qty;
     }
-    List<Map<String, Object?>> ranked(Map<int, double> values, Map<int, Map<String, Object?>> source, String label) {
-      final rows = values.entries.where((entry) => entry.value > 0 && source.containsKey(entry.key))
-          .map((entry) => <String, Object?>{'name': source[entry.key]?[label] ?? '—', 'qty': entry.value})
-          .toList();
+    List<Map<String, Object?>> rankAll(
+      Iterable<Map<String, Object?>> source,
+      Map<int, double> quantities,
+    ) {
+      final rows = source.where((row) => row['id'] is num).map((row) {
+        final id = (row['id'] as num).toInt();
+        return <String, Object?>{
+          'name': row['name'] ?? '—',
+          'qty': quantities[id] ?? 0.0,
+        };
+      }).toList();
       rows.sort((a, b) => ((b['qty'] as num).toDouble()).compareTo((a['qty'] as num).toDouble()));
       return rows;
     }
-    final productsRanked = ranked(productQty, productById, 'name');
-    final categoriesRanked = ranked(categoryQty, categoryById, 'name');
+    // Include zero-sales items so the "least sold" indicators are meaningful.
+    final productsRanked = rankAll(products, productQty);
+    final categoriesRanked = rankAll(categories, categoryQty);
     final lowStockAlerts = reorder.where((row) {
       final qty = qtyFor(row['product_id'], row['warehouse_id']);
       return qty <= ((row['minimum'] as num?)?.toDouble() ?? 0);
