@@ -991,6 +991,9 @@ class DatabaseHelper {
       if (warehouseId == null) throw StateError('حدد المخزن');
       final items = await txn.query('inventory_items', where:'document_id=?', whereArgs:[documentId]);
       if (items.isEmpty) throw StateError('مستند الجرد لا يحتوي على أصناف');
+      if (items.any((item) => ((item['counted'] as num?)?.toInt() ?? 0) != 1)) {
+        throw StateError('لا يمكن ترحيل الجرد قبل تسجيل العد الفعلي لكل صنف');
+      }
       double increaseCost = 0;
       double decreaseCost = 0;
       for (final item in items) {
