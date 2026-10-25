@@ -22,7 +22,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   bool loading = false;
 
   @override
-  void initState() { super.initState(); tabs = TabController(length: 5, vsync: this); reload(); }
+  void initState() { super.initState(); tabs = TabController(length: 4, vsync: this); reload(); }
   @override
   void dispose() { tabs.dispose(); search.dispose(); super.dispose(); }
   void msg(String value) { if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(value))); }
@@ -101,9 +101,9 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     ]),
     if(loading) const LinearProgressIndicator(),
     Card(child:Column(children:[
-      TabBar(controller:tabs,isScrollable:true,tabs:const[Tab(text:'رصيد المخزون'),Tab(text:'قرب النفاد'),Tab(text:'منتهي الصلاحية'),Tab(text:'قرب الانتهاء'),Tab(text:'حد إعادة الطلب')]),
+      TabBar(controller:tabs,isScrollable:true,tabs:const[Tab(text:'رصيد المخزون'),Tab(text:'قرب النفاد'),Tab(text:'منتهي الصلاحية'),Tab(text:'قرب الانتهاء')]),
       SizedBox(height:500,child:TabBarView(controller:tabs,children:[
-        table(stockRows,false),table(lowRows,false),table(expiredRows,true),table(expiringRows,true),tableReorder(reorderRows),
+        table(stockRows,false),table(lowRows,false),table(expiredRows,true),table(expiringRows,true),
       ])),
     ])),
     const Padding(padding:EdgeInsets.only(top:8),child:Text('الأرصدة للعرض فقط وتتغير من المستندات المرحلة. يمكن تصدير الجداول لاحقًا كملف Excel أصلي؛ الطباعة الحالية معاينة داخل التطبيق.',style:TextStyle(color:Colors.blueGrey))),
@@ -148,14 +148,13 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       1 => lowRows,
       2 => expiredRows,
       3 => expiringRows,
-      4 => reorderRows,
       _ => stockRows,
     };
     if (rows.isEmpty) {
       msg('لا توجد بيانات لتصديرها');
       return;
     }
-    final isReorderTab = tabs.index == 4;
+    final isReorderTab = false;
     final isBatchTab = tabs.index == 2 || tabs.index == 3;
     final header = isReorderTab
         ? ['الصنف', 'الكود', 'المخزن', 'الحد الأدنى', 'الحد الأعلى', 'الرصيد الحالي', 'الحالة']
