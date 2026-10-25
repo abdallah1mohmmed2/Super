@@ -85,7 +85,9 @@ class _DataScreenState extends State<DataScreen> {
       final loaded = <String, List<Map<String, Object?>>>{};
       for (final entry in _referenceFields.entries) {
         String? where;
-        if (['customer_id', 'supplier_id', 'warehouse_id', 'cash_box_id',
+        if (entry.key == 'customer_id') {
+          where = 'is_active=1 AND is_suspended=0';
+        } else if (['supplier_id', 'warehouse_id', 'cash_box_id',
              'from_warehouse_id', 'to_warehouse_id', 'from_cashbox_id', 'to_cashbox_id'].contains(entry.key)) {
           where = 'is_active=1';
         } else if (entry.key == 'product_id') {
@@ -956,6 +958,15 @@ class _DataScreenState extends State<DataScreen> {
         final customerId = (header['customer_id'] as num?)?.toInt();
         if (customerId != null) {
           final customerRows = await db.query('customers', where: 'id=?', whereArgs: [customerId], limit: 1);
+          if (customerRows.isNotEmpty) {
+            final customer = customerRows.first;
+            if (((customer['is_active'] as num?)?.toInt() ?? 1) != 1) {
+              throw StateError('لا يمكن البيع لعميل غير نشط');
+            }
+            if (((customer['is_suspended'] as num?)?.toInt() ?? 0) == 1) {
+              throw StateError('هذا العميل موقوف ولا يمكن ترحيل فاتورة له');
+            }
+          }
           final requiresApproval = customerRows.isNotEmpty && ((customerRows.first['manager_approval'] as num?)?.toInt() ?? 0) == 1;
           if (requiresApproval) {
             final requests = await db.query('approval_requests', where: 'entity_type=? AND entity_id=?', whereArgs: ['sales', _selectedId], orderBy: 'id DESC', limit: 1);
