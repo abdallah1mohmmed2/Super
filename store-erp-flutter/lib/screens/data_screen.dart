@@ -245,7 +245,11 @@ class _DataScreenState extends State<DataScreen> {
       );
     }
     final reference = _referenceFields[field];
-    final options = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+    final allOptions = _referenceOptions[field] ?? const <Map<String, Object?>>[];
+    final selectedCashBoxId = int.tryParse(_controllers['cash_box_id']?.text ?? '');
+    final options = field == 'cash_session_id' && selectedCashBoxId != null
+        ? allOptions.where((row) => (row['cash_box_id'] as num?)?.toInt() == selectedCashBoxId).toList()
+        : allOptions;
     if (reference != null) {
       final selected = int.tryParse(_controllers[field]!.text);
       final selectedValue = options.any((row) => (row['id'] as num?)?.toInt() == selected)
