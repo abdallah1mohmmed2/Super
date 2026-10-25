@@ -266,12 +266,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
       if (product.isEmpty) return false;
       return _categoryId == null || (product.first['category_id'] as num?)?.toInt() == _categoryId;
     }).fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
-    final debit=_sum(d.journalLines,'debit'), credit=_sum(d.journalLines,'credit');
+    final entriesInPeriod = d.entries.where((row) => _within(row, 'entry_date')).toList();
+    final entryIds = entriesInPeriod.map((row) => (row['id'] as num?)?.toInt()).whereType<int>().toSet();
+    final journalLinesInPeriod = d.journalLines.where((row) => entryIds.contains((row['entry_id'] as num?)?.toInt())).toList();
+    final debit=_sum(journalLinesInPeriod,'debit'), credit=_sum(journalLinesInPeriod,'credit');
     final selectedReportRows = _buildReportRows(d, sales);
     return ListView(padding:const EdgeInsets.all(18),children:[
       Row(children: [
         const Expanded(child: Text('التقارير العامة والمحاسبية',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),
-        OutlinedButton.icon(onPressed:()=>_showPrintPreview(sales,purchases,d.entries,stockValue,debit,credit,selectedReportRows,_selectedReport),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),
+        OutlinedButton.icon(onPressed:()=>_showPrintPreview(sales,purchases,entriesInPeriod,stockValue,debit,credit,selectedReportRows,_selectedReport),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),
         const SizedBox(width:8),
         OutlinedButton.icon(onPressed:()=>closeModule(context),icon:const Icon(Icons.close),label:const Text('إغلاق')),
       ]),
@@ -333,7 +336,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
       ))),
       _section('ملخص المبيعات',sales,['id','invoice_no','invoice_date','net','paid','status'],'sales_report'),
       _section('ملخص المشتريات',purchases,['id','invoice_no','invoice_date','net','paid','status'],'purchases_report'),
-      _section('القيود المحاسبية',d.entries,['id','entry_no','entry_date','source_type','source_id','description','status'],'journal_report'),
+      _section('القيود المحاسبية',entriesInPeriod,['id','entry_no','entry_date','source_type','source_id','description','status'],'journal_report'),
       Card(child:Padding(padding:const EdgeInsets.all(16),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('اختبار توازن القيود',style:TextStyle(fontSize:18,fontWeight:FontWeight.bold)),const SizedBox(height:8),Text('إجمالي المدين: ${_money(debit)}'),Text('إجمالي الدائن: ${_money(credit)}'),Text((debit-credit).abs()<0.005?'القيود متوازنة إجمالًا':'تحذير: يوجد فرق في إجمالي القيود',style:TextStyle(color:(debit-credit).abs()<0.005?Colors.green:Colors.red,fontWeight:FontWeight.bold))]))),
     ]);
   });
