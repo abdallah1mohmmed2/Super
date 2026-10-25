@@ -728,15 +728,25 @@ class DatabaseHelper {
       }
       double total = 0, costTotal = 0;
       final requestedByProduct=<int,double>{};
-      for(final line in lines){final id=line['product_id']!.toInt();final q=line['qty']!.toDouble();if(q<=0)throw StateError('كمية المرتجع يجب أن تكون أكبر من صفر');requestedByProduct[id]=(requestedByProduct[id]??0)+q;}
+      for(final line in lines){
+        final id = line['product_id']!.toInt();
+        final q = line['qty']!.toDouble();
+        final factor = (line['factor'] ?? 1).toDouble();
+        if (q <= 0 || factor <= 0) throw StateError('كمية المرتجع ومعامل الوحدة يجب أن يكونا أكبر من صفر');
+        requestedByProduct[id] = (requestedByProduct[id] ?? 0) + q * factor;
+      }
       final checkedProducts=<int>{};
       final maxOriginalPriceByProduct=<int,double>{};
       for (final line in lines) {
-        final productId = line['product_id']!.toInt(); final qty = line['qty']!.toDouble(); final price = (line['price'] ?? 0).toDouble();
-        if (qty <= 0 || price < 0) throw StateError('تحقق من كمية وسعر المرتجع');
+        final productId = line['product_id']!.toInt();
+        final qty = line['qty']!.toDouble();
+        final factor = (line['factor'] ?? 1).toDouble();
+        final baseQty = qty * factor;
+        final price = (line['price'] ?? 0).toDouble();
+        if (qty <= 0 || factor <= 0 || price < 0) throw StateError('تحقق من كمية ومعامل وحدة وسعر المرتجع');
         if(checkedProducts.add(productId)) {
           final sold = await txn.rawQuery('SELECT COALESCE(SUM(qty*COALESCE(factor,1)),0) AS qty FROM sales_lines WHERE sales_id=? AND product_id=?',[originalId,productId]);
-          final returned = await txn.rawQuery('SELECT COALESCE(SUM(l.qty),0) AS qty FROM sales_return_lines l JOIN sales_returns r ON r.id=l.return_id WHERE r.sales_id=? AND r.status=? AND l.product_id=?',[originalId,'مرحل',productId]);
+          final returned = await txn.rawQuery('SELECT COALESCE(SUM(l.qty*COALESCE(l.factor,1)),0) AS qty FROM sales_return_lines l JOIN sales_returns r ON r.id=l.return_id WHERE r.sales_id=? AND r.status=? AND l.product_id=?',[originalId,'مرحل',productId]);
           final soldQty = (sold.first['qty'] as num).toDouble(); final returnedQty = (returned.first['qty'] as num).toDouble();
           if ((requestedByProduct[productId]??0) > soldQty-returnedQty+0.000001) throw StateError('كمية المرتجع تتجاوز الكمية المباعة للصنف $productId');
           final originalLines = await txn.query('sales_lines', where:'sales_id=? AND product_id=?', whereArgs:[originalId, productId]);
@@ -749,7 +759,7 @@ class DatabaseHelper {
           }
           maxOriginalPriceByProduct[productId] = maxOriginalPrice;
         }
-        if (price > (maxOriginalPriceByProduct[productId] ?? 0) + 0.005) {
+        if (price / factor > (maxOriginalPriceByProduct[productId] ?? 0) + 0.005) {
           throw StateError('سعر استرجاع الصنف $productId لا يمكن أن يتجاوز سعر بيعه الأصلي للوحدة الأساسية');
         }
         final products = await txn.query('products', where:'id=?', whereArgs:[productId], limit:1);
@@ -757,9 +767,9 @@ class DatabaseHelper {
         final isGood = (line['good'] ?? 1).toInt() == 1;
         if (isGood) {
           final stock = await txn.query('inventory', where:'product_id=? AND warehouse_id=?', whereArgs:[productId,warehouseId], limit:1);
-          if (stock.isEmpty) await txn.insert('inventory', {'product_id':productId,'warehouse_id':warehouseId,'qty':qty});
-          else await txn.update('inventory', {'qty':(stock.first['qty'] as num).toDouble()+qty}, where:'id=?', whereArgs:[stock.first['id']]);
-          costTotal += qty * ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
+          if (stock.isEmpty) await txn.insert('inventory', {'product_id':productId,'warehouse_id':warehouseId,'qty':baseQty});
+          else await txn.update('inventory', {'qty':(stock.first['qty'] as num).toDouble()+baseQty}, where:'id=?', whereArgs:[stock.first['id']]);
+          costTotal += baseQty * ((products.first['cost_price'] as num?)?.toDouble() ?? 0);
         }
         total += qty*price;
       }
