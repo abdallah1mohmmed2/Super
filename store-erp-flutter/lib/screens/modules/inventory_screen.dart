@@ -103,7 +103,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
     Card(child:Column(children:[
       TabBar(controller:tabs,isScrollable:true,tabs:const[Tab(text:'رصيد المخزون'),Tab(text:'قرب النفاد'),Tab(text:'منتهي الصلاحية'),Tab(text:'قرب الانتهاء')]),
       SizedBox(height:500,child:TabBarView(controller:tabs,children:[
-        table(stockRows,false),table(lowRows,false),table(expiredRows,true),table(expiringRows,true),
+        table(stockRows,false),tableReorder(lowRows),table(expiredRows,true),table(expiringRows,true),
       ])),
     ])),
     const Padding(padding:EdgeInsets.only(top:8),child:Text('الأرصدة للعرض فقط وتتغير من المستندات المرحلة. يمكن تصدير الجداول لاحقًا كملف Excel أصلي؛ الطباعة الحالية معاينة داخل التطبيق.',style:TextStyle(color:Colors.blueGrey))),
@@ -154,7 +154,7 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
       msg('لا توجد بيانات لتصديرها');
       return;
     }
-    final isReorderTab = false;
+    final isReorderTab = tabs.index == 1;
     final isBatchTab = tabs.index == 2 || tabs.index == 3;
     final header = isReorderTab
         ? ['الصنف', 'الكود', 'المخزن', 'الحد الأدنى', 'الحد الأعلى', 'الرصيد الحالي', 'الحالة']
@@ -199,8 +199,8 @@ class _InventoryScreenState extends State<InventoryScreen> with SingleTickerProv
   }
 
   Future<void> showPrintPreview() async {
-    final rows=switch(tabs.index){1=>lowRows,2=>expiredRows,3=>expiringRows,4=>reorderRows,_=>stockRows};
-    final title=switch(tabs.index){1=>'قرب النفاد',2=>'منتهي الصلاحية',3=>'قرب الانتهاء',4=>'حد إعادة الطلب',_=>'رصيد المخزون'};
-    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text('معاينة طباعة — $title'),content:SizedBox(width:620,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('عدد السجلات: ${rows.length}'),Text('القيمة التقديرية للمخزون: ${money(stockValue)}'),const Divider(),...rows.take(80).map((r)=>Text(tabs.index == 4 ? '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | الحد الأدنى: ${r['minimum']??0} | الحد الأعلى: ${r['maximum']??0}' : '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | كمية: ${r['qty']??0} | انتهاء: ${r['expiry_date']??'—'}'))]))),actions:[FilledButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))]));
+    final rows=switch(tabs.index){1=>lowRows,2=>expiredRows,3=>expiringRows,_=>stockRows};
+    final title=switch(tabs.index){1=>'قرب النفاد',2=>'منتهي الصلاحية',3=>'قرب الانتهاء',_=>'رصيد المخزون'};
+    await showDialog<void>(context:context,builder:(ctx)=>AlertDialog(title:Text('معاينة طباعة — $title'),content:SizedBox(width:620,child:SingleChildScrollView(child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Text('عدد السجلات: ${rows.length}'),Text('القيمة التقديرية للمخزون: ${money(stockValue)}'),const Divider(),...rows.take(80).map((r)=>Text(tabs.index == 1 ? '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | الحد الأدنى: ${r['minimum']??0} | الحد الأعلى: ${r['maximum']??0} | الرصيد: ${r['qty']??0}' : (tabs.index == 2 || tabs.index == 3) ? '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | كمية: ${r['qty']??0} | انتهاء: ${r['expiry_date']??'—'}' : '${product(r['product_id'])?['name']??'صنف'} | ${warehouse(r['warehouse_id'])?['name']??'—'} | الرصيد: ${r['qty']??0} | التكلفة: ${money(product(r['product_id'])?['cost_price'])}'))]))),actions:[FilledButton(onPressed:()=>Navigator.pop(ctx),child:const Text('إغلاق'))]));
   }
 }
