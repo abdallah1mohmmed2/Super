@@ -28,9 +28,10 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final entries = await db.query('accounting_entries', orderBy:'entry_date DESC');
     final lines = await db.query('accounting_entry_lines');
     final salesLines = await db.query('sales_lines');
+    final purchaseLines = await db.query('purchases_lines');
     final categories = await db.query('categories', orderBy:'name');
     final warehouses = await db.query('warehouses', orderBy:'name');
-    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines,salesLines,categories,warehouses);
+    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines,salesLines,purchaseLines,categories,warehouses);
   }
   bool _within(Map<String,Object?> row, String key) {
     final value = DateTime.tryParse((row[key] ?? '').toString());
@@ -242,8 +243,25 @@ class _ReportsScreenState extends State<ReportsScreen> {
       }
       return true;
     }).toList();
-    final purchases=d.purchases.where((r)=>_within(r,'invoice_date')&&r['status']=='مرحل').toList();
-    final stockValue=d.inventory.fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
+    final purchases=d.purchases.where((r) {
+      if (!_within(r, 'invoice_date') || r['status'] != 'مرحل') return false;
+      if (_warehouseId != null && (r['warehouse_id'] as num?)?.toInt() != _warehouseId) return false;
+      if (_categoryId != null) {
+        final purchaseId = (r['id'] as num?)?.toInt();
+        final productIds = d.purchaseLines.where((line) => (line['purchase_id'] as num?)?.toInt() == purchaseId)
+            .map((line) => (line['product_id'] as num?)?.toInt()).whereType<int>().toSet();
+        if (!d.products.any((product) => productIds.contains((product['id'] as num?)?.toInt()) &&
+            (product['category_id'] as num?)?.toInt() == _categoryId)) return false;
+      }
+      return true;
+    }).toList();
+    final stockValue=d.inventory.where((row) {
+      if (_warehouseId != null && (row['warehouse_id'] as num?)?.toInt() != _warehouseId) return false;
+      final productId = (row['product_id'] as num?)?.toInt();
+      final product = d.products.where((p) => (p['id'] as num?)?.toInt() == productId);
+      if (product.isEmpty) return false;
+      return _categoryId == null || (product.first['category_id'] as num?)?.toInt() == _categoryId;
+    }).fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
     final debit=_sum(d.journalLines,'debit'), credit=_sum(d.journalLines,'credit');
     final selectedReportRows = _buildReportRows(d, sales);
     return ListView(padding:const EdgeInsets.all(18),children:[
@@ -319,6 +337,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _section(String title,List<Map<String,Object?>> rows,List<String> keys,String filename)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('$title (${rows.length})',style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold))),TextButton.icon(onPressed:()=>_export(rows,filename),icon:const Icon(Icons.download),label:const Text('تصدير Excel (.xlsx)'))]),const SizedBox(height:8),if(rows.isEmpty)const Padding(padding:EdgeInsets.all(12),child:Text('لا توجد بيانات ضمن الفترة'))else SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:keys.map((k)=>DataColumn(label:Text(k))).toList(),rows:rows.take(100).map((r)=>DataRow(cells:keys.map((k)=>DataCell(Text((r[k]??'—').toString()))).toList())).toList()))])));
 }
 class _ReportData {
- final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines,salesLines,categories,warehouses;
- const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines,this.salesLines,this.categories,this.warehouses);
+ final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines,salesLines,purchaseLines,categories,warehouses;
+ const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines,this.salesLines,this.purchaseLines,this.categories,this.warehouses);
 }
