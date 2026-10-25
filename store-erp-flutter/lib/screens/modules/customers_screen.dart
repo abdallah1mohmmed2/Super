@@ -186,7 +186,7 @@ class _CustomersScreenState extends State<CustomersScreen> {
                                   DataCell(Text((row['code'] ?? '—').toString())),
                                   DataCell(Text((row['mobile'] ?? '—').toString())),
                                   DataCell(Text((row['balance'] ?? 0).toString())),
-                                  DataCell(Text(((row['is_active'] as num?)?.toInt() ?? 1) == 1 ? 'نشط' : 'غير نشط')),
+                                  DataCell(Text(((row['is_suspended'] as num?)?.toInt() ?? 0) == 1 ? 'موقوف' : (((row['is_active'] as num?)?.toInt() ?? 1) == 1 ? 'نشط' : 'غير نشط'))),
                                 ],
                               )).toList(),
                             ),
