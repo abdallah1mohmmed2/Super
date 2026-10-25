@@ -1006,10 +1006,18 @@ class _DataScreenState extends State<DataScreen> {
         _message('لا توجد عملية ترحيل معرفة لهذه الشاشة'); return; 
       }
       
-      if (!mounted) return; 
+      if (!mounted) return;
+      final updatedHeader = await db.query(
+        config.table,
+        where: 'id=?',
+        whereArgs: [_selectedId],
+        limit: 1,
+      );
+      if (updatedHeader.isNotEmpty) _select(updatedHeader.first);
       await context.read<AppProvider>().refresh();
-      _message('تم ترحيل المستند وتسجيل العملية');
-      setState((){});
+      await _loadReferenceOptions();
+      _message('تم ترحيل المستند وتحديث حالته وبياناته');
+      if (mounted) setState(() {});
     } catch(e) {
       _message('فشل الترحيل: $e');
     }
