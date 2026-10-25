@@ -402,7 +402,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
           DataCell(Text('${product?['name'] ?? r['product_id']}')),
           DataCell(Text(n(r['book_qty']).toStringAsFixed(2))),
           DataCell(SizedBox(width: 120, child: TextFormField(
-            key: ValueKey('count-${r['id']}-${r['count_qty']}'),
+            key: ValueKey('count-${r['id']}'),
             initialValue: n(r['count_qty']).toStringAsFixed(2),
             enabled: status == 'مسودة',
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
