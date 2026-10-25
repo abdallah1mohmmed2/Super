@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 15,
+        version: 16,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -31,7 +31,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 15, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 16, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -184,6 +184,13 @@ class DatabaseHelper {
         await db.execute('ALTER TABLE damage_lines ADD COLUMN batch_id INTEGER REFERENCES product_batches(id) ON DELETE SET NULL');
       }
     }
+    if (oldVersion < 16) {
+      final countColumns = await db.rawQuery('PRAGMA table_info(inventory_items)');
+      if (!countColumns.any((column) => column['name'] == 'counted')) {
+        await db.execute('ALTER TABLE inventory_items ADD COLUMN counted INTEGER NOT NULL DEFAULT 0');
+      }
+      await db.execute('UPDATE inventory_items SET counted=1 WHERE ABS(COALESCE(count_qty,0)-COALESCE(book_qty,0))>0.000001 OR ABS(COALESCE(count_qty2,0)-COALESCE(book_qty,0))>0.000001');
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -211,7 +218,7 @@ class DatabaseHelper {
       '''CREATE TABLE cash_box_transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, cash_box_id INTEGER NOT NULL REFERENCES cash_boxes(id), transaction_date TEXT DEFAULT CURRENT_TIMESTAMP, type TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, notes TEXT)''',
       '''CREATE TABLE cash_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, from_cashbox_id INTEGER REFERENCES cash_boxes(id), to_cashbox_id INTEGER REFERENCES cash_boxes(id), amount REAL NOT NULL, reason TEXT, status TEXT DEFAULT 'مسودة', transfer_date TEXT DEFAULT CURRENT_TIMESTAMP)''',
       '''CREATE TABLE inventory_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, inventory_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), inventory_type TEXT, status TEXT DEFAULT 'مسودة', notes TEXT, created_by INTEGER REFERENCES users(id), approved_by INTEGER REFERENCES users(id), posted_by INTEGER REFERENCES users(id))''',
-      '''CREATE TABLE inventory_items(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES inventory_documents(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), book_qty REAL DEFAULT 0, count_qty REAL DEFAULT 0, count_qty2 REAL DEFAULT 0, difference REAL DEFAULT 0, difference_cost REAL DEFAULT 0)''',
+      '''CREATE TABLE inventory_items(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES inventory_documents(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), book_qty REAL DEFAULT 0, count_qty REAL DEFAULT 0, count_qty2 REAL DEFAULT 0, difference REAL DEFAULT 0, difference_cost REAL DEFAULT 0, counted INTEGER NOT NULL DEFAULT 0)''',
       '''CREATE TABLE app_settings(key TEXT PRIMARY KEY, value TEXT)''',
       '''CREATE TABLE document_payments(id INTEGER PRIMARY KEY AUTOINCREMENT, document_type TEXT NOT NULL, document_id INTEGER NOT NULL, payment_date TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, method TEXT NOT NULL DEFAULT 'نقدي', amount REAL NOT NULL CHECK(amount > 0), reference TEXT, notes TEXT)''',
       '''CREATE TABLE audit_log(id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER REFERENCES users(id), action TEXT NOT NULL, entity TEXT, entity_id INTEGER, details TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP)''',
