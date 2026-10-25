@@ -1573,7 +1573,10 @@ class _DataScreenState extends State<DataScreen> {
       await _loadReferenceOptions();
       if (mounted) setState(() {});
     } catch (e) {
-      if (mounted) _message('تعذر تحديث البيانات والقوائم: $e');
+      if (mounted) {
+        setState(() => _referencesLoading = false);
+        _message('تعذر تحديث البيانات والقوائم: $e');
+      }
     }
   }
 
