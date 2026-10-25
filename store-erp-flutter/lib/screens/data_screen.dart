@@ -1069,7 +1069,9 @@ class _DataScreenState extends State<DataScreen> {
       final lines = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=?', whereArgs: [ret['id']]);
       for (final line in lines) {
         final pid = (line['product_id'] as num).toInt();
-        alreadyReturned[pid] = (alreadyReturned[pid] ?? 0) + ((line['qty'] as num?)?.toDouble() ?? 0);
+        final returnedQty = (line['qty'] as num?)?.toDouble() ?? 0;
+        final returnedFactor = (line['factor'] as num?)?.toDouble() ?? 1;
+        alreadyReturned[pid] = (alreadyReturned[pid] ?? 0) + returnedQty * returnedFactor;
       }
     }
     final products = await DatabaseHelper.instance.query('products');
