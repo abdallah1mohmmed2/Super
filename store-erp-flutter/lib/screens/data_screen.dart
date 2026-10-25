@@ -117,6 +117,20 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
+    if (field == 'balance' && ['customers', 'suppliers'].contains(widget.screenKey)) {
+      final value = _controllers[field]!.text.trim();
+      return SizedBox(
+        width: width,
+        child: InputDecorator(
+          decoration: InputDecoration(
+            labelText: fieldLabel(field),
+            prefixIcon: const Icon(Icons.account_balance_wallet_outlined),
+            border: const OutlineInputBorder(),
+          ),
+          child: Text(value.isEmpty ? 'يُحدّث تلقائيًا من الحركات المالية' : value),
+        ),
+      );
+    }
     if (field == 'is_active' && ['customers', 'suppliers', 'users'].contains(widget.screenKey)) {
       final active = _controllers[field]!.text.isEmpty ||
           _controllers[field]!.text == '1';
@@ -461,7 +475,7 @@ class _DataScreenState extends State<DataScreen> {
     final data = <String,Object?>{};
     for (final field in config.fields) {
       if (field == 'confirm_password') continue; // UI-only confirmation; never stored.
-      if (widget.screenKey == 'suppliers' && field == 'balance') continue; // Ledger-derived balance.
+      if (['customers', 'suppliers'].contains(widget.screenKey) && field == 'balance') continue; // Ledger-derived balance.
       final raw = _controllers[field]!.text.trim();
       if (raw.isEmpty) continue;
       if (_numericFields.contains(field)) {
