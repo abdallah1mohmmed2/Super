@@ -148,6 +148,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         'entity_id': id,
         'details': 'الصندوق: ${box['name']}؛ الرصيد الافتتاحي: ${opening.toStringAsFixed(2)}',
       });
+      await context.read<AppProvider>().refresh();
       await _reload();
       if (mounted) _message('تم فتح جلسة الصندوق برصيد افتتاحي ${opening.toStringAsFixed(2)}');
     } catch (e) {
@@ -231,6 +232,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         'entity_id': session['id'],
         'details': 'متوقع=${expected.toStringAsFixed(2)}؛ فعلي=${actual.toStringAsFixed(2)}؛ فرق=${difference.toStringAsFixed(2)}',
       });
+      await context.read<AppProvider>().refresh();
       await _reload();
       if (mounted) {
         await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
