@@ -17,8 +17,9 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   final _qty = TextEditingController(text: '1');
   final _batch = TextEditingController();
   final _cost = TextEditingController(text: '0');
-  List<Map<String, Object?>> warehouses = [], products = [], docs = [], lines = [], batches = [], barcodes = [];
-  int? warehouseId, productId, selectedLineId, documentId, batchId;
+  List<Map<String, Object?>> warehouses = [], products = [], docs = [], lines = [], batches = [], barcodes = [], productUnits = [];
+  int? warehouseId, productId, selectedLineId, documentId, batchId, unitId;
+  double unitFactor = 1;
   DateTime date = DateTime.now();
   String documentType = 'تالف', status = 'مسودة', reason = 'تالف';
   bool busy = false;
@@ -36,11 +37,43 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
       final w = await db.query('warehouses', where: 'is_active=1', orderBy: 'name');
       final p = await db.query('products', where: 'is_active=1', orderBy: 'name');
       final b = await db.query('barcodes', orderBy: 'barcode');
+      final u = await db.query('product_units', orderBy: 'unit_name');
       final d = await db.query('damage_documents', orderBy: 'document_date DESC', limit: 300);
       if (!mounted) return;
-      setState(() { warehouses = w; products = p; barcodes = b; docs = d; warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt(); });
+      setState(() { warehouses = w; products = p; barcodes = b; productUnits = u; docs = d; warehouseId ??= w.isEmpty ? null : (w.first['id'] as num).toInt(); });
       await _loadBatches();
     } catch (e) { msg('تعذر تحميل سندات التالف: $e'); }
+  }
+
+  List<Map<String, Object?>> get _selectedProductUnits => productUnits
+      .where((unit) => (unit['product_id'] as num?)?.toInt() == productId)
+      .toList();
+
+  Map<String, Object?>? get _selectedProduct => products
+      .where((p) => (p['id'] as num?)?.toInt() == productId)
+      .firstOrNull;
+
+  void _selectProduct(int? value) {
+    final selected = products.where((p) => (p['id'] as num?)?.toInt() == value).firstOrNull;
+    final options = productUnits.where((u) => (u['product_id'] as num?)?.toInt() == value).toList();
+    final unit = options.isEmpty ? null : options.first;
+    setState(() {
+      productId = value;
+      unitId = (unit?['id'] as num?)?.toInt();
+      unitFactor = ((unit?['factor'] as num?)?.toDouble() ?? 1).clamp(0.000001, double.infinity).toDouble();
+      _cost.text = (n(selected?['cost_price']) * unitFactor).toStringAsFixed(2);
+    });
+    _loadBatches();
+  }
+
+  void _selectUnit(int? value) {
+    final unit = productUnits.where((u) => (u['id'] as num?)?.toInt() == value && (u['product_id'] as num?)?.toInt() == productId).firstOrNull;
+    final factor = ((unit?['factor'] as num?)?.toDouble() ?? 1).clamp(0.000001, double.infinity).toDouble();
+    setState(() {
+      unitId = value;
+      unitFactor = factor;
+      _cost.text = (n(_selectedProduct?['cost_price']) * factor).toStringAsFixed(2);
+    });
   }
 
   Future<void> _loadBatches() async {
@@ -113,9 +146,11 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     if (documentId == null) { msg('أنشئ سندًا أولًا'); return; }
     if (status != 'مسودة') { msg('لا يمكن تعديل سند غير مسودة'); return; }
     if (productId == null) { msg('اختر الصنف'); return; }
-    final qty = double.tryParse(_qty.text) ?? 0;
-    final cost = double.tryParse(_cost.text) ?? 0;
-    if (qty <= 0 || cost < 0) { msg('أدخل كمية موجبة وتكلفة غير سالبة'); return; }
+    final enteredQty = double.tryParse(_qty.text) ?? 0;
+    final enteredCost = double.tryParse(_cost.text) ?? 0;
+    if (enteredQty <= 0 || enteredCost < 0 || unitFactor <= 0) { msg('أدخل كمية موجبة وتكلفة غير سالبة ووحدة صحيحة'); return; }
+    final qty = enteredQty * unitFactor;
+    final cost = enteredCost / unitFactor;
     final product = products.where((p) => (p['id'] as num).toInt() == productId).firstOrNull;
     if (((product?['batch_tracking'] as num?)?.toInt() ?? 0) == 1 && batchId == null) {
       msg('هذا الصنف يتتبع الدفعات؛ اختر الدفعة قبل إضافة السطر'); return;
@@ -260,8 +295,17 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
         TextField(controller: _productSearch, decoration: const InputDecoration(labelText: 'بحث بالاسم أو الكود أو الباركود', prefixIcon: Icon(Icons.search), border: OutlineInputBorder()), onChanged: (_) => setState(() {})),
         const SizedBox(height: 8),
         Wrap(spacing: 12, runSpacing: 12, children: [
-          SizedBox(width: 300, child: DropdownButtonFormField<int>(value: products.any((p) => (p['id'] as num).toInt() == productId) ? productId : null, decoration: const InputDecoration(labelText: 'الصنف المختار', border: OutlineInputBorder()), items: matches.map((p) => DropdownMenuItem(value: (p['id'] as num).toInt(), child: Text('${p['name']} • ${p['code'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() { productId = v; final p = products.firstWhere((p) => (p['id'] as num).toInt() == v); _cost.text = n(p['cost_price']).toStringAsFixed(2); }); _loadBatches(); } : null)),
-          SizedBox(width: 140, child: TextField(controller: _qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية الأساسية', border: OutlineInputBorder()))),
+          SizedBox(width: 300, child: DropdownButtonFormField<int>(value: products.any((p) => (p['id'] as num).toInt() == productId) ? productId : null, decoration: const InputDecoration(labelText: 'الصنف المختار', border: OutlineInputBorder()), items: matches.map((p) => DropdownMenuItem(value: (p['id'] as num).toInt(), child: Text('${p['name']} • ${p['code'] ?? ''}', overflow: TextOverflow.ellipsis))).toList(), onChanged: status == 'مسودة' ? _selectProduct : null)),
+          SizedBox(width: 190, child: DropdownButtonFormField<int?>(
+            value: unitId,
+            decoration: const InputDecoration(labelText: 'الوحدة', border: OutlineInputBorder()),
+            items: [
+              DropdownMenuItem<int?>(value: null, child: Text('${_selectedProduct?['unit'] ?? 'الوحدة الأساسية'} (أساسية)')),
+              ..._selectedProductUnits.map((u) => DropdownMenuItem<int?>(value: (u['id'] as num).toInt(), child: Text('${u['unit_name'] ?? 'وحدة'} × ${u['factor'] ?? 1}'))),
+            ],
+            onChanged: status == 'مسودة' && productId != null ? _selectUnit : null,
+          )),
+          SizedBox(width: 140, child: TextField(controller: _qty, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'الكمية', border: OutlineInputBorder()))),
           SizedBox(width: 150, child: TextField(controller: _cost, keyboardType: const TextInputType.numberWithOptions(decimal: true), decoration: const InputDecoration(labelText: 'تكلفة الوحدة', border: OutlineInputBorder()))),
           SizedBox(width: 220, child: DropdownButtonFormField<int?>(value: batchId, decoration: const InputDecoration(labelText: 'رقم الدفعة', border: OutlineInputBorder()), items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون دفعة')), ...batches.map((b) => DropdownMenuItem<int?>(value: (b['id'] as num).toInt(), child: Text('${b['batch_no'] ?? b['id']} • رصيد ${b['qty']}')))], onChanged: status == 'مسودة' ? (v) { setState(() { batchId = v; final b = batches.where((b) => (b['id'] as num).toInt() == v).firstOrNull; _batch.text = (b?['batch_no'] ?? '').toString(); }); } : null)),
           FilledButton.icon(onPressed: busy ? null : _addLine, icon: const Icon(Icons.add), label: const Text('إضافة سطر')),
