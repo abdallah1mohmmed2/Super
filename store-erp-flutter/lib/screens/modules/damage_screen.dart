@@ -18,7 +18,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   final _batch = TextEditingController();
   final _cost = TextEditingController(text: '0');
   List<Map<String, Object?>> warehouses = [], products = [], docs = [], lines = [], batches = [], barcodes = [], productUnits = [];
-  int? warehouseId, productId, selectedLineId, documentId, batchId, unitId;
+  int? warehouseId, targetWarehouseId, productId, selectedLineId, documentId, batchId, unitId;
   double unitFactor = 1;
   DateTime date = DateTime.now();
   String documentType = 'تالف', status = 'مسودة', reason = 'تالف';
@@ -93,7 +93,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
     if (warehouseId == null) { msg('أضف مخزنًا نشطًا أولًا'); return; }
     final id = await db.insert('damage_documents', {
       'document_no': 'DMG-${DateTime.now().microsecondsSinceEpoch}',
-      'document_date': dateText, 'warehouse_id': warehouseId, 'document_type': documentType,
+      'document_date': dateText, 'warehouse_id': warehouseId, 'target_warehouse_id': targetWarehouseId, 'document_type': documentType,
       'cause': _cause.text.trim().isEmpty ? reason : _cause.text.trim(), 'status': 'مسودة',
     });
     if (!mounted) return;
@@ -135,6 +135,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
       documentId = id; _number.text = (doc['document_no'] ?? '').toString();
       date = DateTime.tryParse((doc['document_date'] ?? '').toString()) ?? DateTime.now();
       warehouseId = (doc['warehouse_id'] as num?)?.toInt();
+      targetWarehouseId = (doc['target_warehouse_id'] as num?)?.toInt();
       documentType = (doc['document_type'] ?? 'تالف').toString();
       _cause.text = (doc['cause'] ?? '').toString();
       status = (doc['status'] ?? 'مسودة').toString();
@@ -185,10 +186,11 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   Future<bool> _save() async {
     if (documentId == null) { msg('أنشئ سندًا أولًا'); return false; }
     if (status != 'مسودة') { msg('لا يمكن تعديل سند غير مسودة'); return false; }
+    if (targetWarehouseId != null && targetWarehouseId == warehouseId) { msg('يجب أن يختلف المخزن الهدف عن المخزن المصدر'); return false; }
     try {
       await db.update('damage_documents', {
         'document_no': _number.text.trim(), 'document_date': dateText, 'warehouse_id': warehouseId,
-        'document_type': documentType, 'cause': _cause.text.trim(),
+        'target_warehouse_id': targetWarehouseId, 'document_type': documentType, 'cause': _cause.text.trim(),
       }, where: 'id=?', whereArgs: [documentId]);
       await _reloadDocs(); msg('تم حفظ السند');
       return true;
@@ -282,13 +284,20 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
         )),
         OutlinedButton.icon(onPressed: busy ? null : _searchDocuments, icon: const Icon(Icons.search), label: const Text('بحث')),
         SizedBox(width: 200, child: DropdownButtonFormField<String>(value: documentType, decoration: const InputDecoration(labelText: 'نوع المستند', border: OutlineInputBorder()), items: const ['تالف','منتهي الصلاحية'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: status == 'مسودة' ? (v) => setState(() => documentType = v ?? 'تالف') : null)),
-        SizedBox(width: 220, child: DropdownButtonFormField<int>(value: warehouses.any((w) => (w['id'] as num).toInt() == warehouseId) ? warehouseId : null, decoration: const InputDecoration(labelText: 'المخزن', border: OutlineInputBorder()), items: warehouses.map((w) => DropdownMenuItem(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString()))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() => warehouseId = v); _loadBatches(); } : null)),
+        SizedBox(width: 220, child: DropdownButtonFormField<int>(value: warehouses.any((w) => (w['id'] as num).toInt() == warehouseId) ? warehouseId : null, decoration: const InputDecoration(labelText: 'المخزن', border: OutlineInputBorder()), items: warehouses.map((w) => DropdownMenuItem(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString()))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() { warehouseId = v; if (targetWarehouseId == v) targetWarehouseId = null; }); _loadBatches(); } : null)),
+        SizedBox(width: 240, child: DropdownButtonFormField<int?>(
+          value: warehouses.any((w) => (w['id'] as num).toInt() == targetWarehouseId) ? targetWarehouseId : null,
+          decoration: const InputDecoration(labelText: 'المخزن الهدف (اختياري)', border: OutlineInputBorder()),
+          items: [const DropdownMenuItem<int?>(value: null, child: Text('بدون مخزن هدف')), ...warehouses.map((w) => DropdownMenuItem<int?>(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString())))],
+          onChanged: status == 'مسودة' ? (v) => setState(() => targetWarehouseId = v) : null,
+        )),
         OutlinedButton.icon(onPressed: status == 'مسودة' ? _pickDate : null, icon: const Icon(Icons.calendar_month), label: Text(dateText)),
         SizedBox(width: 240, child: TextField(controller: _cause, readOnly: status != 'مسودة', decoration: const InputDecoration(labelText: 'سبب التلف/الانتهاء', border: OutlineInputBorder()))),
         OutlinedButton.icon(onPressed: _newDoc, icon: const Icon(Icons.add), label: const Text('جديد')),
         OutlinedButton.icon(onPressed: _save, icon: const Icon(Icons.save_outlined), label: const Text('حفظ')),
         OutlinedButton.icon(onPressed: () async { final doc = await showDialog<Map<String,Object?>>(context: context, builder: (ctx) => SimpleDialog(title: const Text('تحميل مستند'), children: docs.map((d) => SimpleDialogOption(onPressed: () => Navigator.pop(ctx,d), child: Text('${d['document_no']} • ${d['status']} • ${d['document_date']}'))).toList())); if (doc != null) await _openDoc(doc); }, icon: const Icon(Icons.folder_open), label: const Text('تحميل مستند')),
       ]))),
+      const Padding(padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2), child: Text('ملاحظة: المخزن الهدف يُحفظ كبيان مرجعي؛ الترحيل الحالي يخصم الكمية من المخزن المصدر فقط.', style: TextStyle(color: Colors.blueGrey))),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('إدخال الصنف', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 10),
