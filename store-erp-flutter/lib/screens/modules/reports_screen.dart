@@ -164,6 +164,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     double stockValue,
     double debit,
     double credit,
+    List<Map<String, Object?>> selectedRows,
+    String selectedTitle,
   ) async {
     final salesTotal = _money(_sum(sales, 'net'));
     final purchasesTotal = _money(_sum(purchases, 'net'));
@@ -188,6 +190,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
                 Text('إجمالي المدين: $debitTotal — إجمالي الدائن: $creditTotal'),
                 Text('فرق ميزان المراجعة: $trialBalanceDifference'),
                 const Divider(height: 24),
+                _previewTable(selectedTitle, selectedRows,
+                    selectedRows.isEmpty ? const [] : selectedRows.first.keys.toList()),
                 _previewTable('المبيعات', sales, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
                 _previewTable('المشتريات', purchases, const ['invoice_no', 'invoice_date', 'net', 'paid', 'status']),
                 _previewTable('القيود المحاسبية', entries, const ['entry_no', 'entry_date', 'source_type', 'description', 'status']),
@@ -267,7 +271,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     return ListView(padding:const EdgeInsets.all(18),children:[
       Row(children: [
         const Expanded(child: Text('التقارير العامة والمحاسبية',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),
-        OutlinedButton.icon(onPressed:()=>_showPrintPreview(sales,purchases,d.entries,stockValue,debit,credit),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),
+        OutlinedButton.icon(onPressed:()=>_showPrintPreview(sales,purchases,d.entries,stockValue,debit,credit,selectedReportRows,_selectedReport),icon:const Icon(Icons.print_outlined),label:const Text('معاينة الطباعة')),
         const SizedBox(width:8),
         OutlinedButton.icon(onPressed:()=>closeModule(context),icon:const Icon(Icons.close),label:const Text('إغلاق')),
       ]),
