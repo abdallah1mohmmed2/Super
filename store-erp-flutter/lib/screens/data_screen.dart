@@ -37,7 +37,7 @@ class _DataScreenState extends State<DataScreen> {
   
   ScreenConfig get config => screenConfigs[widget.screenKey] ?? screenConfigs['products']!;
   bool get _readOnly => ['inventory','backup','counts','dailycount','monthlycount','yearlycount','countreports'].contains(widget.screenKey);
-  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','cash_session_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active'};
+  static const _numericFields = {'category_id','cost_price','sale_price','credit_limit','balance','subtotal','discount','tax','net','paid','total','qty','factor','book_qty','count_qty','count_qty2','difference','difference_cost','amount','product_id','warehouse_id','cash_box_id','cash_session_id','supplier_id','document_id','sales_id','customer_id','from_warehouse_id','to_warehouse_id','from_cashbox_id','to_cashbox_id','is_active','is_suspended','manager_approval'};
 
   final Map<String, List<Map<String, Object?>>> _referenceOptions = {};
   bool _referencesLoading = true;
@@ -117,7 +117,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Widget _fieldInput(String field, double width) {
-    if (field == 'is_active' && ['suppliers', 'users'].contains(widget.screenKey)) {
+    if (field == 'is_active' && ['customers', 'suppliers', 'users'].contains(widget.screenKey)) {
       final active = _controllers[field]!.text.isEmpty ||
           _controllers[field]!.text == '1';
       return SizedBox(
@@ -126,6 +126,21 @@ class _DataScreenState extends State<DataScreen> {
           contentPadding: EdgeInsets.zero,
           title: Text(fieldLabel(field)),
           value: active,
+          onChanged: (value) {
+            _controllers[field]!.text = value ? '1' : '0';
+            setState(() {});
+          },
+        ),
+      );
+    }
+    if (['is_suspended', 'manager_approval'].contains(field) && widget.screenKey == 'customers') {
+      final checked = _controllers[field]!.text == '1';
+      return SizedBox(
+        width: width,
+        child: SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: Text(fieldLabel(field)),
+          value: checked,
           onChanged: (value) {
             _controllers[field]!.text = value ? '1' : '0';
             setState(() {});
