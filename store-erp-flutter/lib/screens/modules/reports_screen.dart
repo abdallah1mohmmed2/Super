@@ -15,6 +15,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _to = DateTime.now();
   String _selectedReport = 'ملخص المبيعات';
+  int? _warehouseId, _categoryId;
   @override void initState() { super.initState(); _future = _load(); }
   Future<_ReportData> _load() async {
     final db = DatabaseHelper.instance;
@@ -28,7 +29,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final lines = await db.query('accounting_entry_lines');
     final salesLines = await db.query('sales_lines');
     final categories = await db.query('categories', orderBy:'name');
-    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines,salesLines,categories);
+    final warehouses = await db.query('warehouses', orderBy:'name');
+    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines,salesLines,categories,warehouses);
   }
   bool _within(Map<String,Object?> row, String key) {
     final value = DateTime.tryParse((row[key] ?? '').toString());
@@ -228,7 +230,18 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if(snapshot.connectionState==ConnectionState.waiting) return const Center(child:CircularProgressIndicator());
     if(snapshot.hasError) return Center(child:Text('تعذر تحميل التقارير: ${snapshot.error}'));
     final d=snapshot.data!;
-    final sales=d.sales.where((r)=>_within(r,'invoice_date')&&r['status']=='مرحل').toList();
+    final sales=d.sales.where((r) {
+      if (!_within(r, 'invoice_date') || r['status'] != 'مرحل') return false;
+      if (_warehouseId != null && (r['warehouse_id'] as num?)?.toInt() != _warehouseId) return false;
+      if (_categoryId != null) {
+        final saleId = (r['id'] as num?)?.toInt();
+        final productIds = d.salesLines.where((line) => (line['sales_id'] as num?)?.toInt() == saleId)
+            .map((line) => (line['product_id'] as num?)?.toInt()).whereType<int>().toSet();
+        if (!d.products.any((product) => productIds.contains((product['id'] as num?)?.toInt()) &&
+            (product['category_id'] as num?)?.toInt() == _categoryId)) return false;
+      }
+      return true;
+    }).toList();
     final purchases=d.purchases.where((r)=>_within(r,'invoice_date')&&r['status']=='مرحل').toList();
     final stockValue=d.inventory.fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
     final debit=_sum(d.journalLines,'debit'), credit=_sum(d.journalLines,'credit');
@@ -240,7 +253,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
         const SizedBox(width:8),
         OutlinedButton.icon(onPressed:()=>closeModule(context),icon:const Icon(Icons.close),label:const Text('إغلاق')),
       ]),
-      const SizedBox(height:12), Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:10,runSpacing:10,crossAxisAlignment:WrapCrossAlignment.center,children:[OutlinedButton.icon(onPressed:()=>_pickDate(true),icon:const Icon(Icons.calendar_month),label:Text('من: ${_from.toIso8601String().substring(0,10)}')),OutlinedButton.icon(onPressed:()=>_pickDate(false),icon:const Icon(Icons.calendar_month),label:Text('إلى: ${_to.toIso8601String().substring(0,10)}')),FilledButton.tonalIcon(onPressed:()=>setState(()=>_future=_load()),icon:const Icon(Icons.refresh),label:const Text('تحديث'))]))),
+      const SizedBox(height:12), Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:10,runSpacing:10,crossAxisAlignment:WrapCrossAlignment.center,children:[
+        OutlinedButton.icon(onPressed:()=>_pickDate(true),icon:const Icon(Icons.calendar_month),label:Text('من: ${_from.toIso8601String().substring(0,10)}')),
+        OutlinedButton.icon(onPressed:()=>_pickDate(false),icon:const Icon(Icons.calendar_month),label:Text('إلى: ${_to.toIso8601String().substring(0,10)}')),
+        SizedBox(width:220,child:DropdownButtonFormField<int>(
+          value: _warehouseId,
+          decoration: const InputDecoration(labelText:'المخزن', border:OutlineInputBorder()),
+          items:[const DropdownMenuItem<int>(value:null,child:Text('كل المخازن')),...d.warehouses.map((w)=>DropdownMenuItem<int>(value:(w['id'] as num).toInt(),child:Text((w['name']??'').toString())))],
+          onChanged:(value)=>setState(()=>_warehouseId=value),
+        )),
+        SizedBox(width:220,child:DropdownButtonFormField<int>(
+          value: _categoryId,
+          decoration: const InputDecoration(labelText:'القسم', border:OutlineInputBorder()),
+          items:[const DropdownMenuItem<int>(value:null,child:Text('كل الأقسام')),...d.categories.map((c)=>DropdownMenuItem<int>(value:(c['id'] as num).toInt(),child:Text((c['name']??'').toString())))],
+          onChanged:(value)=>setState(()=>_categoryId=value),
+        )),
+        FilledButton.tonalIcon(onPressed:()=>setState(()=>_future=_load()),icon:const Icon(Icons.refresh),label:const Text('تحديث')),
+      ]))),
       const SizedBox(height:8), Wrap(spacing:12,runSpacing:12,children:[_metric('صافي المبيعات',_money(_sum(sales,'net')),Icons.point_of_sale),_metric('صافي المشتريات',_money(_sum(purchases,'net')),Icons.shopping_cart),_metric('قيمة المخزون التقديرية',_money(stockValue),Icons.inventory_2),_metric('ذمم العملاء',_money(_sum(d.customers,'balance')),Icons.people),_metric('ذمم الموردين',_money(_sum(d.suppliers,'balance')),Icons.local_shipping),_metric('فرق ميزان المراجعة',_money(debit-credit),Icons.account_balance)]),
       const SizedBox(height:18),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(
@@ -290,6 +319,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _section(String title,List<Map<String,Object?>> rows,List<String> keys,String filename)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('$title (${rows.length})',style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold))),TextButton.icon(onPressed:()=>_export(rows,filename),icon:const Icon(Icons.download),label:const Text('تصدير Excel (.xlsx)'))]),const SizedBox(height:8),if(rows.isEmpty)const Padding(padding:EdgeInsets.all(12),child:Text('لا توجد بيانات ضمن الفترة'))else SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:keys.map((k)=>DataColumn(label:Text(k))).toList(),rows:rows.take(100).map((r)=>DataRow(cells:keys.map((k)=>DataCell(Text((r[k]??'—').toString()))).toList())).toList()))])));
 }
 class _ReportData {
- final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines,salesLines,categories;
- const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines,this.salesLines,this.categories);
+ final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines,salesLines,categories,warehouses;
+ const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines,this.salesLines,this.categories,this.warehouses);
 }
