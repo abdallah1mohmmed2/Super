@@ -270,13 +270,20 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
     final visibleBoxes = _boxes.where((box) => _boxFilter.isEmpty || (box['name'] ?? '').toString().toLowerCase().contains(_boxFilter.toLowerCase())).toList();
     final box = _selectedBox;
     final session = _activeSession;
-    final expected = session == null ? null : (session['opening_balance'] as num?)?.toDouble();
-    final sessionTransactions = session == null
+    final selectedSession = _sessions.where((s) =>
+      (s['id'] as num?)?.toInt() == _sessionId &&
+      (s['cash_box_id'] as num?)?.toInt() == _boxId
+    ).firstOrNull ?? session;
+    final expected = selectedSession == null ? null : (selectedSession['opening_balance'] as num?)?.toDouble();
+    final sessionTransactions = selectedSession == null
         ? _transactions
         : _transactions.where((row) {
-            final openedAt = DateTime.tryParse((session['opened_at'] ?? '').toString());
+            final openedAt = DateTime.tryParse((selectedSession['opened_at'] ?? '').toString());
+            final closedAt = DateTime.tryParse((selectedSession['closed_at'] ?? '').toString());
             final transactionAt = DateTime.tryParse((row['transaction_date'] ?? '').toString());
-            return openedAt != null && transactionAt != null && !transactionAt.isBefore(openedAt);
+            return openedAt != null && transactionAt != null &&
+                !transactionAt.isBefore(openedAt) &&
+                (closedAt == null || !transactionAt.isAfter(closedAt));
           }).toList();
     final incoming = sessionTransactions.fold<double>(0, (sum, row) {
       final amount = (row['amount'] as num?)?.toDouble() ?? 0;
@@ -315,9 +322,21 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         Text('جلسة الصندوق', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
         Wrap(spacing: 10, runSpacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
-          SizedBox(width: 300, child: DropdownButtonFormField<int>(value: _boxes.any((b) => (b['id'] as num).toInt() == _boxId) ? _boxId : null, decoration: const InputDecoration(labelText: 'الصندوق'), items: _boxes.map((b) => DropdownMenuItem(value: (b['id'] as num).toInt(), child: Text((b['name'] ?? '').toString()))).toList(), onChanged: _busy ? null : (v) async { setState(() => _boxId = v); await _reload(); })),
+          SizedBox(width: 300, child: DropdownButtonFormField<int>(value: _boxes.any((b) => (b['id'] as num).toInt() == _boxId) ? _boxId : null, decoration: const InputDecoration(labelText: 'الصندوق'), items: _boxes.map((b) => DropdownMenuItem(value: (b['id'] as num).toInt(), child: Text((b['name'] ?? '').toString()))).toList(), onChanged: _busy ? null : (v) async { setState(() { _boxId = v; _sessionId = null; }); await _reload(); })),
+          SizedBox(width: 320, child: DropdownButtonFormField<int>(
+            value: _sessions.any((s) => (s['id'] as num?)?.toInt() == _sessionId && (s['cash_box_id'] as num?)?.toInt() == _boxId)
+                ? _sessionId
+                : (session != null && (session['cash_box_id'] as num?)?.toInt() == _boxId ? (session['id'] as num).toInt() : null),
+            decoration: const InputDecoration(labelText: 'جلسة البيع / الجلسة المحددة'),
+            items: _sessions.where((s) => (s['cash_box_id'] as num?)?.toInt() == _boxId).map((s) => DropdownMenuItem<int>(
+              value: (s['id'] as num).toInt(),
+              child: Text('${s['session_no']} • ${s['status']} • ${s['opened_at']}'),
+            )).toList(),
+            onChanged: (v) => setState(() => _sessionId = v),
+          )),
           Chip(label: Text(session == null ? 'لا توجد جلسة مفتوحة' : 'جلسة مفتوحة: ${session['session_no']}')),
           if (session != null) Text('وقت الفتح: ${session['opened_at']}'),
+          if (selectedSession != null) Text('حالة الجلسة المحددة: ${selectedSession['status']}'),
           if (expected != null) Text('الرصيد الافتتاحي: ${expected.toStringAsFixed(2)}'),
           FilledButton.icon(onPressed: _busy || session != null || box == null ? null : _openSession, icon: const Icon(Icons.lock_open), label: const Text('فتح جلسة')),
           OutlinedButton.icon(onPressed: _busy || session == null ? null : _closeSession, icon: const Icon(Icons.lock_clock), label: const Text('إقفال الصندوق')),
