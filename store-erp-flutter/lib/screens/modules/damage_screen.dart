@@ -11,6 +11,7 @@ class DamageDocumentsScreen extends StatefulWidget {
 class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   final db = DatabaseHelper.instance;
   final _number = TextEditingController();
+  final _documentSearch = TextEditingController();
   final _cause = TextEditingController();
   final _productSearch = TextEditingController();
   final _qty = TextEditingController(text: '1');
@@ -28,7 +29,7 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   @override
   void initState() { super.initState(); _load(); }
   @override
-  void dispose() { _number.dispose(); _cause.dispose(); _productSearch.dispose(); _qty.dispose(); _batch.dispose(); _cost.dispose(); super.dispose(); }
+  void dispose() { _number.dispose(); _documentSearch.dispose(); _cause.dispose(); _productSearch.dispose(); _qty.dispose(); _batch.dispose(); _cost.dispose(); super.dispose(); }
 
   Future<void> _load() async {
     try {
@@ -71,6 +72,26 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
   Future<void> _reloadDocs() async {
     final rows = await db.query('damage_documents', orderBy: 'document_date DESC', limit: 300);
     if (mounted) setState(() => docs = rows);
+  }
+
+  Future<void> _searchDocuments() async {
+    final query = _documentSearch.text.trim();
+    try {
+      final rows = query.isEmpty
+          ? await db.query('damage_documents', orderBy: 'document_date DESC', limit: 300)
+          : await db.query(
+              'damage_documents',
+              where: 'document_no LIKE ?',
+              whereArgs: ['%$query%'],
+              orderBy: 'document_date DESC',
+              limit: 300,
+            );
+      if (!mounted) return;
+      setState(() => docs = rows);
+      msg(rows.isEmpty ? 'لا توجد مستندات مطابقة لرقم البحث' : 'نتائج البحث: ${rows.length}');
+    } catch (e) {
+      msg('تعذر البحث عن المستند: $e');
+    }
   }
 
   Future<void> _openDoc(Map<String, Object?> doc) async {
@@ -219,6 +240,12 @@ class _DamageDocumentsScreenState extends State<DamageDocumentsScreen> {
       Row(children: [const Expanded(child: Text('سند التالف والمنتهي', style: TextStyle(fontSize: 25, fontWeight: FontWeight.bold))), Chip(label: Text(status))]),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Wrap(spacing: 12, runSpacing: 12, children: [
         SizedBox(width: 200, child: TextField(controller: _number, readOnly: status != 'مسودة', decoration: const InputDecoration(labelText: 'رقم المستند', border: OutlineInputBorder()))),
+        SizedBox(width: 220, child: TextField(
+          controller: _documentSearch,
+          decoration: const InputDecoration(labelText: 'بحث برقم المستند', border: OutlineInputBorder(), prefixIcon: Icon(Icons.search)),
+          onSubmitted: (_) => _searchDocuments(),
+        )),
+        OutlinedButton.icon(onPressed: busy ? null : _searchDocuments, icon: const Icon(Icons.search), label: const Text('بحث')),
         SizedBox(width: 200, child: DropdownButtonFormField<String>(value: documentType, decoration: const InputDecoration(labelText: 'نوع المستند', border: OutlineInputBorder()), items: const ['تالف','منتهي الصلاحية'].map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(), onChanged: status == 'مسودة' ? (v) => setState(() => documentType = v ?? 'تالف') : null)),
         SizedBox(width: 220, child: DropdownButtonFormField<int>(value: warehouses.any((w) => (w['id'] as num).toInt() == warehouseId) ? warehouseId : null, decoration: const InputDecoration(labelText: 'المخزن', border: OutlineInputBorder()), items: warehouses.map((w) => DropdownMenuItem(value: (w['id'] as num).toInt(), child: Text((w['name'] ?? '').toString()))).toList(), onChanged: status == 'مسودة' ? (v) { setState(() => warehouseId = v); _loadBatches(); } : null)),
         OutlinedButton.icon(onPressed: status == 'مسودة' ? _pickDate : null, icon: const Icon(Icons.calendar_month), label: Text(dateText)),
