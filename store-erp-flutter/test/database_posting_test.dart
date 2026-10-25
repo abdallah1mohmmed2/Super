@@ -404,12 +404,14 @@ void main() {
       'product_id': increaseProductId,
       'book_qty': 5,
       'count_qty': 7,
+      'counted': 1,
     });
     await db.insert('inventory_items', {
       'document_id': documentId,
       'product_id': shortageProductId,
       'book_qty': 8,
       'count_qty': 6,
+      'counted': 1,
     });
 
     await helper.postInventoryCount(documentId: documentId);
