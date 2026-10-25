@@ -739,7 +739,7 @@ class _DataScreenState extends State<DataScreen> {
         final bookQty=stock.isEmpty?0.0:((stock.first['qty'] as num?)?.toDouble()??0);
         final already=await DatabaseHelper.instance.query('inventory_items',where:'document_id=? AND product_id=?',whereArgs:[_selectedId,productId],limit:1);
         if(already.isNotEmpty) throw StateError('الصنف موجود مسبقًا في مستند الجرد');
-        values.remove('qty'); values.addAll({'book_qty':bookQty,'count_qty':qty,'count_qty2':qty,'difference':qty-bookQty,'difference_cost':0});
+        values.remove('qty'); values.addAll({'book_qty':bookQty,'count_qty':qty,'count_qty2':qty,'difference':qty-bookQty,'difference_cost':0,'counted':1});
       }
       final selectedProduct = products.firstWhere((x)=>(x['id'] as num).toInt()==productId);
       final unitName = unitOptions.where((u)=>(u['id'] as num?)?.toInt()==selectedUnitId).map((u)=>(u['unit_name']??'').toString()).firstWhere((name)=>name.isNotEmpty, orElse:()=>(selectedProduct['unit']??'قطعة').toString());
