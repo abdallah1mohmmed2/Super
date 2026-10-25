@@ -8,7 +8,7 @@ class ScreenConfig {
 /// search, and tables use one consistent definition.
 const screenConfigs = <String, ScreenConfig>{
  'products': ScreenConfig('إدارة الأصناف','products',['code','name','english_name','category_id','unit','cost_price','sale_price','notes'],['id','code','name','unit','cost_price','sale_price','is_active']),
- 'customers': ScreenConfig('إدارة العملاء','customers',['name','code','phone','mobile','address','credit_limit','balance'],['id','name','code','mobile','credit_limit','balance','is_active']),
+ 'customers': ScreenConfig('إدارة العملاء','customers',['name','code','phone','mobile','address','notes','credit_limit','balance','credit_notes','is_active','is_suspended','manager_approval'],['id','name','code','mobile','credit_limit','balance','credit_notes','is_active','is_suspended','manager_approval']),
  'suppliers': ScreenConfig('إدارة الموردين','suppliers',['code','name','phone','mobile','address','tax_number','contact_person','balance','is_active','notes'],['id','code','name','phone','mobile','tax_number','contact_person','balance','is_active']),
  'users': ScreenConfig('إدارة المستخدمين','users',['username','full_name','password_hash','confirm_password','roles','is_active'],['id','username','full_name','roles','is_active']),
  'sales': ScreenConfig('فواتير المبيعات','sales_header',['invoice_no','invoice_date','customer_id','warehouse_id','cash_box_id','cash_session_id','cashier','payment_method','discount','tax','notes'],['id','invoice_no','invoice_date','customer_id','warehouse_id','cash_session_id','cashier','net','paid','status']),
