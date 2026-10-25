@@ -40,6 +40,13 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
 
   Future<void> _closeDay() async {
     final date = _date.toIso8601String().substring(0, 10);
+    final today = DateTime.now().toIso8601String().substring(0, 10);
+    if (date.compareTo(today) > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('لا يمكن إقفال يوم مستقبلي')),
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -68,6 +75,7 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
         date,
         context.read<AppProvider>().currentUser,
       );
+      await context.read<AppProvider>().refresh();
       _reload();
 
       if (mounted) {
