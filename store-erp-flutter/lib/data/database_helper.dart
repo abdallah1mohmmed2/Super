@@ -439,8 +439,17 @@ class DatabaseHelper {
           whereArgs: [approvalCustomerId],
           limit: 1,
         );
-        if (approvalCustomers.isNotEmpty &&
-            ((approvalCustomers.first['manager_approval'] as num?)?.toInt() ?? 0) == 1) {
+        if (approvalCustomers.isEmpty) {
+          throw StateError('العميل المحدد غير موجود');
+        }
+        final customer = approvalCustomers.first;
+        if (((customer['is_active'] as num?)?.toInt() ?? 1) != 1) {
+          throw StateError('لا يمكن البيع لعميل غير نشط');
+        }
+        if (((customer['is_suspended'] as num?)?.toInt() ?? 0) == 1) {
+          throw StateError('حساب العميل موقوف');
+        }
+        if (((customer['manager_approval'] as num?)?.toInt() ?? 0) == 1) {
           final approvals = await txn.query(
             'approval_requests',
             where: 'entity_type=? AND entity_id=?',
