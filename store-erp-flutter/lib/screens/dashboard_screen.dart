@@ -4,21 +4,45 @@ import '../core/app_theme.dart';
 import '../providers/app_provider.dart';
 import '../widgets/common_widgets.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   final ValueChanged<String> onOpen;
   const DashboardScreen({super.key, required this.onOpen});
 
-  @override Widget build(BuildContext context) {
-    final provider = context.watch<AppProvider>();
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  late Future<_DashboardData> _future;
+  bool _initialized = false;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (!_initialized) {
+      _future = _load(context.read<AppProvider>());
+      _initialized = true;
+    }
+  }
+
+  Future<void> _refreshDashboard() async {
+    final provider = context.read<AppProvider>();
+    await provider.refresh();
+    if (!mounted) return;
+    setState(() => _future = _load(provider));
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FutureBuilder<_DashboardData>(
-      future: _load(provider),
+      future: _future,
       builder: (context, snapshot) {
         final data = snapshot.data ?? _DashboardData.empty();
         return ListView(padding: const EdgeInsets.all(20), children: [
           Row(children: [
             const Expanded(child: Text('لوحة التحكم', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold))),
             OutlinedButton.icon(
-              onPressed: () { context.read<AppProvider>().refresh(); },
+              onPressed: _refreshDashboard,
               icon: const Icon(Icons.refresh),
               label: const Text('تحديث المؤشرات'),
             ),
@@ -37,7 +61,7 @@ class DashboardScreen extends StatelessWidget {
           ]),
           const SizedBox(height: 14),
           GridView.count(crossAxisCount: MediaQuery.sizeOf(context).width > 1000 ? 3 : 1, shrinkWrap: true, physics: const NeverScrollableScrollPhysics(), crossAxisSpacing: 14, mainAxisSpacing: 14, childAspectRatio: 1.8, children: [
-            _dashboardCard(context, 'فواتير المبيعات', Icons.point_of_sale, () => onOpen('sales'), '${data.salesCount} فاتورة'),
+            _dashboardCard(context, 'فواتير المبيعات', Icons.point_of_sale, () => widget.onOpen('sales'), '${data.salesCount} فاتورة'),
             _dashboardCard(context, 'فواتير المشتريات', Icons.shopping_cart, () => onOpen('purchases'), '${data.purchaseCount} فاتورة'),
             _dashboardCard(context, 'الأصناف', Icons.category, () => onOpen('products'), '${data.productCount} صنف'),
             _dashboardCard(context, 'العملاء', Icons.people, () => onOpen('customers'), '${data.customerCount} عميل'),
@@ -154,7 +178,7 @@ class DashboardScreen extends StatelessWidget {
       todaySales: sum(sales.where((r) => (r['invoice_date']?.toString() ?? '').startsWith(today) && r['status'] == 'مرحل').toList(), 'net'),
       purchaseTotal: sum(purchases.where((r) => r['status'] == 'مرحل').toList(), 'net'),
       stockValue: inventory.fold<double>(0, (total, row) { final product = products.where((p) => p['id'] == row['product_id']); final cost = product.isEmpty ? 0.0 : ((product.first['cost_price'] as num?)?.toDouble() ?? 0); return total + cost * ((row['qty'] as num?)?.toDouble() ?? 0); }),
-      customerBalances: sum(customers, 'balance'), salesCount: sales.length, purchaseCount: purchases.length,
+      customerBalances: sum(customers, 'balance'), salesCount: sales.where((r) => r['status'] == 'مرحل').length, purchaseCount: purchases.where((r) => r['status'] == 'مرحل').length,
       productCount: products.length, customerCount: customers.length,
       lowStockCount: lowStockCount, pendingApprovals: approvals.length, expiredBatchCount: expiredBatchCount,
       topProducts: productsRanked.take(5).toList(),
