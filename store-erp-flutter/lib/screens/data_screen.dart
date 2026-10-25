@@ -1565,6 +1565,18 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   @override 
+  Future<void> _refreshScreen() async {
+    if (_busy) return;
+    setState(() => _referencesLoading = true);
+    try {
+      await context.read<AppProvider>().refresh();
+      await _loadReferenceOptions();
+      if (mounted) setState(() {});
+    } catch (e) {
+      if (mounted) _message('تعذر تحديث البيانات والقوائم: $e');
+    }
+  }
+
   Widget build(BuildContext context) {
     return FutureBuilder<List<Map<String,Object?>>>(
       future: _loadRows(),
@@ -1801,7 +1813,7 @@ class _DataScreenState extends State<DataScreen> {
               spacing: 8, 
               children: [
                 ActionButton('تصدير CSV', icon: Icons.file_download_outlined, onPressed: () => _export(rows)), 
-                ActionButton('تحديث', icon: Icons.refresh, onPressed: () => setState(() {}))
+                ActionButton('تحديث', icon: Icons.refresh, onPressed: _refreshScreen)
               ]
             ), 
             child: Column(
