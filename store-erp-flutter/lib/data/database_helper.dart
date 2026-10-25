@@ -18,7 +18,7 @@ class DatabaseHelper {
     _db = await databaseFactory.openDatabase(
       inMemoryDatabasePath,
       options: OpenDatabaseOptions(
-        version: 16,
+        version: 17,
         onConfigure: (db) async => db.execute('PRAGMA foreign_keys = ON'),
         onCreate: _onCreate,
         onUpgrade: _onUpgrade,
@@ -31,7 +31,7 @@ class DatabaseHelper {
     databaseFactory = databaseFactoryFfi;
     final dir = await getApplicationSupportDirectory();
     await dir.create(recursive: true);
-    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 16, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
+    final db = await databaseFactory.openDatabase(p.join(dir.path, 'local_store.db'), options: OpenDatabaseOptions(version: 17, onConfigure: (db) async { await db.execute('PRAGMA foreign_keys = ON'); }, onCreate: _onCreate, onUpgrade: _onUpgrade));
     return db;
   }
 
@@ -191,6 +191,12 @@ class DatabaseHelper {
       }
       await db.execute('UPDATE inventory_items SET counted=1 WHERE ABS(COALESCE(count_qty,0)-COALESCE(book_qty,0))>0.000001 OR ABS(COALESCE(count_qty2,0)-COALESCE(book_qty,0))>0.000001');
     }
+    if (oldVersion < 17) {
+      final damageColumns = await db.rawQuery('PRAGMA table_info(damage_documents)');
+      if (!damageColumns.any((column) => column['name'] == 'target_warehouse_id')) {
+        await db.execute('ALTER TABLE damage_documents ADD COLUMN target_warehouse_id INTEGER REFERENCES warehouses(id)');
+      }
+    }
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -213,7 +219,7 @@ class DatabaseHelper {
       '''CREATE TABLE sales_return_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, return_id INTEGER NOT NULL REFERENCES sales_returns(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, price REAL NOT NULL, condition TEXT DEFAULT 'سليم')''',
       '''CREATE TABLE warehouse_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, transfer_date TEXT, from_warehouse_id INTEGER REFERENCES warehouses(id), to_warehouse_id INTEGER REFERENCES warehouses(id), status TEXT DEFAULT 'مسودة', notes TEXT)''',
       '''CREATE TABLE warehouse_transfer_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_id INTEGER NOT NULL REFERENCES warehouse_transfers(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, factor REAL DEFAULT 1, unit TEXT)''',
-      '''CREATE TABLE damage_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, document_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), document_type TEXT, cause TEXT, status TEXT DEFAULT 'مسودة')''',
+      '''CREATE TABLE damage_documents(id INTEGER PRIMARY KEY AUTOINCREMENT, document_no TEXT UNIQUE, document_date TEXT, warehouse_id INTEGER REFERENCES warehouses(id), target_warehouse_id INTEGER REFERENCES warehouses(id), document_type TEXT, cause TEXT, status TEXT DEFAULT 'مسودة')''',
       '''CREATE TABLE damage_lines(id INTEGER PRIMARY KEY AUTOINCREMENT, document_id INTEGER NOT NULL REFERENCES damage_documents(id) ON DELETE CASCADE, product_id INTEGER NOT NULL REFERENCES products(id), qty REAL NOT NULL, estimated_cost REAL DEFAULT 0, batch_no TEXT, batch_id INTEGER REFERENCES product_batches(id) ON DELETE SET NULL)''',
       '''CREATE TABLE cash_box_transactions(id INTEGER PRIMARY KEY AUTOINCREMENT, cash_box_id INTEGER NOT NULL REFERENCES cash_boxes(id), transaction_date TEXT DEFAULT CURRENT_TIMESTAMP, type TEXT NOT NULL, amount REAL NOT NULL, reference TEXT, notes TEXT)''',
       '''CREATE TABLE cash_transfers(id INTEGER PRIMARY KEY AUTOINCREMENT, transfer_no TEXT UNIQUE, from_cashbox_id INTEGER REFERENCES cash_boxes(id), to_cashbox_id INTEGER REFERENCES cash_boxes(id), amount REAL NOT NULL, reason TEXT, status TEXT DEFAULT 'مسودة', transfer_date TEXT DEFAULT CURRENT_TIMESTAMP)''',
