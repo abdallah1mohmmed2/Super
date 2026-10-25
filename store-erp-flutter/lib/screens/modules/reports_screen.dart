@@ -14,6 +14,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
   late Future<_ReportData> _future;
   DateTime _from = DateTime(DateTime.now().year, DateTime.now().month, 1);
   DateTime _to = DateTime.now();
+  String _selectedReport = 'ملخص المبيعات';
   @override void initState() { super.initState(); _future = _load(); }
   Future<_ReportData> _load() async {
     final db = DatabaseHelper.instance;
@@ -25,7 +26,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final suppliers = await db.query('suppliers');
     final entries = await db.query('accounting_entries', orderBy:'entry_date DESC');
     final lines = await db.query('accounting_entry_lines');
-    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines);
+    final salesLines = await db.query('sales_lines');
+    final categories = await db.query('categories', orderBy:'name');
+    return _ReportData(sales,purchases,inventory,products,customers,suppliers,entries,lines,salesLines,categories);
   }
   bool _within(Map<String,Object?> row, String key) {
     final value = DateTime.tryParse((row[key] ?? '').toString());
@@ -34,6 +37,89 @@ class _ReportsScreenState extends State<ReportsScreen> {
   }
   double _sum(List<Map<String,Object?>> rows,String key) => rows.fold<double>(0,(sum,row)=>sum+((row[key] as num?)?.toDouble() ?? 0));
   String _money(num n) => n.toStringAsFixed(2);
+
+  List<Map<String,Object?>> _buildReportRows(
+    _ReportData data,
+    List<Map<String,Object?>> sales,
+  ) {
+    final saleIds = sales.map((r) => (r['id'] as num?)?.toInt()).whereType<int>().toSet();
+    final lines = data.salesLines.where((r) => saleIds.contains((r['sales_id'] as num?)?.toInt())).toList();
+    final productsById = {for (final row in data.products) (row['id'] as num).toInt(): row};
+    final categoriesById = {for (final row in data.categories) (row['id'] as num).toInt(): row};
+
+    if (_selectedReport == 'ملخص المبيعات') {
+      return sales.map((r) => <String,Object?>{
+        'رقم الفاتورة': r['invoice_no'] ?? '',
+        'التاريخ': r['invoice_date'] ?? '',
+        'الكاشير': r['cashier'] ?? '',
+        'الصافي': r['net'] ?? 0,
+        'المدفوع': r['paid'] ?? 0,
+        'الحالة': r['status'] ?? '',
+      }).toList();
+    }
+
+    if (_selectedReport == 'أداء الموظفين') {
+      final grouped = <String, Map<String,Object?>>{};
+      for (final sale in sales) {
+        final name = (sale['cashier'] ?? 'غير محدد').toString();
+        final row = grouped.putIfAbsent(name, () => {
+          'الموظف': name, 'عدد الفواتير': 0, 'صافي المبيعات': 0.0, 'المتحصلات': 0.0,
+        });
+        row['عدد الفواتير'] = (row['عدد الفواتير'] as int) + 1;
+        row['صافي المبيعات'] = (row['صافي المبيعات'] as num).toDouble() + ((sale['net'] as num?)?.toDouble() ?? 0);
+        row['المتحصلات'] = (row['المتحصلات'] as num).toDouble() + ((sale['paid'] as num?)?.toDouble() ?? 0);
+      }
+      final rows = grouped.values.toList();
+      rows.sort((a,b) => (b['صافي المبيعات'] as num).compareTo(a['صافي المبيعات'] as num));
+      return rows;
+    }
+
+    if (_selectedReport == 'الأصناف المباعة') {
+      return lines.map((line) {
+        final product = productsById[(line['product_id'] as num?)?.toInt()];
+        return <String,Object?>{
+          'الصنف': product?['name'] ?? 'صنف محذوف',
+          'الكود': product?['code'] ?? '',
+          'الكمية': line['qty'] ?? 0,
+          'الإجمالي': line['line_total'] ?? 0,
+          'الفاتورة': line['sales_id'] ?? '',
+        };
+      }).toList();
+    }
+
+    final grouped = <int, Map<String,Object?>>{};
+    for (final line in lines) {
+      final product = productsById[(line['product_id'] as num?)?.toInt()];
+      if (product == null) continue;
+      final isCategory = _selectedReport == 'الأقسام الأعلى مبيعًا' || _selectedReport == 'الأقسام الأقل مبيعًا';
+      final key = isCategory
+          ? (product['category_id'] as num?)?.toInt() ?? 0
+          : (product['id'] as num).toInt();
+      final category = categoriesById[key];
+      final title = isCategory ? (category?['name'] ?? 'بدون قسم') : product['name'];
+      final row = grouped.putIfAbsent(key, () => {
+        isCategory ? 'القسم' : 'الصنف': title,
+        'الكمية المباعة': 0.0,
+        'إجمالي المبيعات': 0.0,
+      });
+      row['الكمية المباعة'] = (row['الكمية المباعة'] as num).toDouble() + ((line['qty'] as num?)?.toDouble() ?? 0);
+      row['إجمالي المبيعات'] = (row['إجمالي المبيعات'] as num).toDouble() + ((line['line_total'] as num?)?.toDouble() ?? 0);
+    }
+    final rows = grouped.values.toList();
+    rows.sort((a,b) => (b['إجمالي المبيعات'] as num).compareTo(a['إجمالي المبيعات'] as num));
+    if (_selectedReport == 'المنتجات الأقل مبيعًا' || _selectedReport == 'الأقسام الأقل مبيعًا') {
+      rows.reverse();
+    }
+    return rows;
+  }
+
+  Widget _reportSelectorButton(String label) => OutlinedButton(
+    onPressed: () => setState(() => _selectedReport = label),
+    style: OutlinedButton.styleFrom(
+      backgroundColor: _selectedReport == label ? const Color(0xFFE0F2FE) : null,
+    ),
+    child: Text(label),
+  );
   CellValue _excelCell(Object? value) {
     if (value == null) return TextCellValue('');
     if (value is bool) return BoolCellValue(value);
@@ -146,6 +232,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
     final purchases=d.purchases.where((r)=>_within(r,'invoice_date')&&r['status']=='مرحل').toList();
     final stockValue=d.inventory.fold<double>(0,(sum,row){final prod=d.products.where((x)=>x['id']==row['product_id']); final cost=prod.isEmpty?0.0:((prod.first['cost_price'] as num?)?.toDouble()??0);return sum+cost*((row['qty'] as num?)?.toDouble()??0);});
     final debit=_sum(d.journalLines,'debit'), credit=_sum(d.journalLines,'credit');
+    final selectedReportRows = _buildReportRows(d, sales);
     return ListView(padding:const EdgeInsets.all(18),children:[
       Row(children: [
         const Expanded(child: Text('التقارير العامة والمحاسبية',style:TextStyle(fontSize:24,fontWeight:FontWeight.bold))),
@@ -156,6 +243,43 @@ class _ReportsScreenState extends State<ReportsScreen> {
       const SizedBox(height:12), Card(child:Padding(padding:const EdgeInsets.all(14),child:Wrap(spacing:10,runSpacing:10,crossAxisAlignment:WrapCrossAlignment.center,children:[OutlinedButton.icon(onPressed:()=>_pickDate(true),icon:const Icon(Icons.calendar_month),label:Text('من: ${_from.toIso8601String().substring(0,10)}')),OutlinedButton.icon(onPressed:()=>_pickDate(false),icon:const Icon(Icons.calendar_month),label:Text('إلى: ${_to.toIso8601String().substring(0,10)}')),FilledButton.tonalIcon(onPressed:()=>setState(()=>_future=_load()),icon:const Icon(Icons.refresh),label:const Text('تحديث'))]))),
       const SizedBox(height:8), Wrap(spacing:12,runSpacing:12,children:[_metric('صافي المبيعات',_money(_sum(sales,'net')),Icons.point_of_sale),_metric('صافي المشتريات',_money(_sum(purchases,'net')),Icons.shopping_cart),_metric('قيمة المخزون التقديرية',_money(stockValue),Icons.inventory_2),_metric('ذمم العملاء',_money(_sum(d.customers,'balance')),Icons.people),_metric('ذمم الموردين',_money(_sum(d.suppliers,'balance')),Icons.local_shipping),_metric('فرق ميزان المراجعة',_money(debit-credit),Icons.account_balance)]),
       const SizedBox(height:18),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('اختيار التقرير', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, runSpacing: 8, children: [
+            _reportSelectorButton('ملخص المبيعات'),
+            _reportSelectorButton('المنتجات الأكثر مبيعًا'),
+            _reportSelectorButton('المنتجات الأقل مبيعًا'),
+            _reportSelectorButton('الأصناف المباعة'),
+            _reportSelectorButton('الأقسام الأعلى مبيعًا'),
+            _reportSelectorButton('الأقسام الأقل مبيعًا'),
+            _reportSelectorButton('أداء الموظفين'),
+          ]),
+          const Divider(height: 24),
+          Row(children: [
+            Expanded(child: Text(_selectedReport, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold))),
+            TextButton.icon(
+              onPressed: selectedReportRows.isEmpty ? null : () => _export(selectedReportRows, 'selected_report'),
+              icon: const Icon(Icons.download),
+              label: const Text('تصدير التقرير'),
+            ),
+          ]),
+          if (selectedReportRows.isEmpty)
+            const Padding(padding: EdgeInsets.all(12), child: Text('لا توجد بيانات لهذا التقرير ضمن الفترة المحددة.'))
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                columns: selectedReportRows.first.keys.map((key) => DataColumn(label: Text(key))).toList(),
+                rows: selectedReportRows.take(150).map((row) => DataRow(
+                  cells: row.values.map((value) => DataCell(Text(value is num ? _money(value) : (value ?? '—').toString()))).toList(),
+                )).toList(),
+              ),
+            ),
+        ],
+      ))),
       _section('ملخص المبيعات',sales,['id','invoice_no','invoice_date','net','paid','status'],'sales_report'),
       _section('ملخص المشتريات',purchases,['id','invoice_no','invoice_date','net','paid','status'],'purchases_report'),
       _section('القيود المحاسبية',d.entries,['id','entry_no','entry_date','source_type','source_id','description','status'],'journal_report'),
@@ -166,6 +290,6 @@ class _ReportsScreenState extends State<ReportsScreen> {
   Widget _section(String title,List<Map<String,Object?>> rows,List<String> keys,String filename)=>Card(child:Padding(padding:const EdgeInsets.all(14),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[Row(children:[Expanded(child:Text('$title (${rows.length})',style:const TextStyle(fontSize:17,fontWeight:FontWeight.bold))),TextButton.icon(onPressed:()=>_export(rows,filename),icon:const Icon(Icons.download),label:const Text('تصدير Excel (.xlsx)'))]),const SizedBox(height:8),if(rows.isEmpty)const Padding(padding:EdgeInsets.all(12),child:Text('لا توجد بيانات ضمن الفترة'))else SingleChildScrollView(scrollDirection:Axis.horizontal,child:DataTable(columns:keys.map((k)=>DataColumn(label:Text(k))).toList(),rows:rows.take(100).map((r)=>DataRow(cells:keys.map((k)=>DataCell(Text((r[k]??'—').toString()))).toList())).toList()))])));
 }
 class _ReportData {
- final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines;
- const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines);
+ final List<Map<String,Object?>> sales,purchases,inventory,products,customers,suppliers,entries,journalLines,salesLines,categories;
+ const _ReportData(this.sales,this.purchases,this.inventory,this.products,this.customers,this.suppliers,this.entries,this.journalLines,this.salesLines,this.categories);
 }
