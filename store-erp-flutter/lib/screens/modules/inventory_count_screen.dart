@@ -146,7 +146,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
       await db.insert('inventory_items', {
         'document_id': documentId, 'product_id': productId,
         'book_qty': book, 'count_qty': book, 'count_qty2': book,
-        'difference': 0, 'difference_cost': 0,
+        'difference': 0, 'difference_cost': 0, 'counted': 0,
       });
       added++;
     }
@@ -170,7 +170,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
         final product = products.where((p) => (p['id'] as num).toInt() == (item['product_id'] as num).toInt()).firstOrNull;
         final cost = n(product?['cost_price']);
         await db.update('inventory_items', {
-          'count_qty': counted, 'difference': counted - book, 'difference_cost': (counted - book) * cost,
+          'count_qty': counted, 'difference': counted - book, 'difference_cost': (counted - book) * cost, 'counted': (item['counted'] as num?)?.toInt() == 1 ? 1 : 0,
         }, where: 'id=?', whereArgs: [item['id']]);
       }
       await _loadDocuments();
@@ -185,6 +185,11 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   Future<void> _approve() async {
     if (documentId == null) { msg('حدد مستندًا'); return; }
     if (status != 'مسودة') { msg('يمكن اعتماد المسودة فقط'); return; }
+    if (items.isEmpty) { msg('أضف أصناف الجرد أولًا'); return; }
+    if (items.any((item) => (item['counted'] as num?)?.toInt() != 1)) {
+      msg('أكمل العد الفعلي لكل الأصناف؛ إدخال الصفر يُحتسب عدًا صحيحًا');
+      return;
+    }
     if (!await _save()) return;
     final approverId = await _currentUserId();
     final changed = await db.update('inventory_documents', {'status': 'معتمد', 'approved_by': approverId}, where: 'id=? AND status=?', whereArgs: [documentId, 'مسودة']);
@@ -314,7 +319,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
   }
 
   Widget build(BuildContext context) {
-    final counted = items.where((r) => n(r['count_qty']) != 0).length;
+    final counted = items.where((r) => (r['counted'] as num?)?.toInt() == 1).length;
     final differences = items.where((r) => (n(r['count_qty']) - n(r['book_qty'])).abs() > 0.0001).toList();
     final increase = differences.fold<double>(0, (sum, r) => sum + (n(r['count_qty']) - n(r['book_qty']) > 0 ? n(r['count_qty']) - n(r['book_qty']) : 0));
     final decrease = differences.fold<double>(0, (sum, r) => sum + (n(r['count_qty']) - n(r['book_qty']) < 0 ? n(r['book_qty']) - n(r['count_qty']) : 0));
@@ -402,7 +407,7 @@ class _InventoryCountScreenState extends State<InventoryCountScreen> {
             enabled: status == 'مسودة',
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             decoration: const InputDecoration(isDense: true, border: OutlineInputBorder()),
-            onChanged: (v) { final idx = items.indexWhere((x) => x['id'] == r['id']); if (idx >= 0) { final countedValue = double.tryParse(v) ?? 0; final differenceValue = countedValue - n(r['book_qty']); setState(() { items[idx]['count_qty'] = countedValue; items[idx]['difference'] = differenceValue; items[idx]['difference_cost'] = differenceValue * n(product?['cost_price']); }); } },
+            onChanged: (v) { final idx = items.indexWhere((x) => x['id'] == r['id']); if (idx >= 0) { final countedValue = double.tryParse(v) ?? 0; final differenceValue = countedValue - n(r['book_qty']); setState(() { items[idx]['count_qty'] = countedValue; items[idx]['counted'] = 1; items[idx]['difference'] = differenceValue; items[idx]['difference_cost'] = differenceValue * n(product?['cost_price']); }); } },
           ))),
           DataCell(Text(difference.toStringAsFixed(2))),
           DataCell(Text((difference * n(product?['cost_price'])).toStringAsFixed(2))),
