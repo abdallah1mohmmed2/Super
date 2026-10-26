@@ -1185,4 +1185,158 @@ void main() {
     );
   });
 
+
+
+  test('sale with insufficient stock rolls back all posting effects', () async {
+    final db = await helper.database;
+    final productId = await createProduct();
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 1,
+    });
+    final sessionId = await createOpenSession();
+    final saleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-SALE-INSUFFICIENT-STOCK',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': sessionId,
+      'cashier': 'test',
+      'net': 20,
+      'paid': 20,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': saleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 2,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 20,
+    });
+
+    await expectLater(
+      helper.postSale(
+        saleId: saleId,
+        warehouseId: 1,
+        cashBoxId: 1,
+        lines: [
+          {'product_id': productId, 'qty': 2.0, 'factor': 1.0},
+        ],
+        net: 20,
+        paid: 20,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final stock = await helper.query('inventory',
+        where: 'product_id=? AND warehouse_id=?', whereArgs: [productId, 1]);
+    final cash = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    final sale = await helper.query('sales_header', where: 'id=?', whereArgs: [saleId]);
+    expect((stock.single['qty'] as num).toDouble(), 1);
+    expect((cash.single['balance'] as num).toDouble(), 0);
+    expect(sale.single['status'], 'مسودة');
+    expect(await helper.query('accounting_entries',
+        where: 'source_type=? AND source_id=?', whereArgs: ['SALE', saleId]), isEmpty);
+    expect(await helper.query('cash_box_transactions',
+        where: 'reference=?', whereArgs: ['SALE-$saleId']), isEmpty);
+  });
+
+  test('return settlement failure rolls back returned stock and document state', () async {
+    final db = await helper.database;
+    final productId = await createProduct(cost: 4, price: 10);
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    final sessionId = await createOpenSession();
+    final saleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-RETURN-ROLLBACK-SALE',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': sessionId,
+      'cashier': 'test',
+      'net': 20,
+      'paid': 20,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': saleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 2,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 20,
+    });
+    await helper.postSale(
+      saleId: saleId,
+      warehouseId: 1,
+      cashBoxId: 1,
+      lines: [
+        {'product_id': productId, 'qty': 2.0, 'factor': 1.0},
+      ],
+      net: 20,
+      paid: 20,
+    );
+
+    // Spend the available balance before attempting the refund. The return
+    // operation must roll back any stock changes if its cash settlement fails.
+    await db.update('cash_boxes', {'balance': 0}, where: 'id=?', whereArgs: [1]);
+    final returnId = await db.insert('sales_returns', {
+      'return_no': 'TEST-RETURN-ROLLBACK-1',
+      'sales_id': saleId,
+      'customer_id': 1,
+      'warehouse_id': 1,
+      'return_date': today(),
+      'total': 10,
+      'status': 'مسودة',
+      'reason': 'اختبار التراجع',
+    });
+    await db.insert('sales_return_lines', {
+      'return_id': returnId,
+      'product_id': productId,
+      'qty': 1,
+      'price': 10,
+      'condition': 'سليم',
+    });
+    await db.insert('document_payments', {
+      'document_type': 'returns',
+      'document_id': returnId,
+      'payment_date': today(),
+      'method': 'نقدي',
+      'amount': 10,
+    });
+
+    await expectLater(
+      helper.postSalesReturn(
+        returnId: returnId,
+        lines: [
+          {'product_id': productId, 'qty': 1.0, 'price': 10.0, 'good': 1.0},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final stock = await helper.query('inventory',
+        where: 'product_id=? AND warehouse_id=?', whereArgs: [productId, 1]);
+    final cash = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    final returned = await helper.query('sales_returns', where: 'id=?', whereArgs: [returnId]);
+    expect((stock.single['qty'] as num).toDouble(), 3);
+    expect((cash.single['balance'] as num).toDouble(), 0);
+    expect(returned.single['status'], 'مسودة');
+    expect(await helper.query('accounting_entries',
+        where: 'source_type=? AND source_id=?', whereArgs: ['SALES_RETURN', returnId]), isEmpty);
+    expect(await helper.query('cash_box_transactions',
+        where: 'reference=?', whereArgs: ['RETURN-$returnId']), isEmpty);
+  });
+
 }
