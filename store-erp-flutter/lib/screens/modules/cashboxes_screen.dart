@@ -93,6 +93,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   }
 
   Future<void> _saveBox() async {
+    final provider = context.read<AppProvider>();
     final name = _name.text.trim();
     if (name.isEmpty) {
       _message('اسم الصندوق مطلوب');
@@ -106,7 +107,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
       } else {
         await _db.update('cash_boxes', data, where: 'id=?', whereArgs: [_boxId]);
       }
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       await _reload();
       if (mounted) _message('تم حفظ بيانات الصندوق. الرصيد لا يُعدّل يدويًا؛ يتغير عبر الحركات المرحلة.');
     } catch (e) {
@@ -117,6 +118,8 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   }
 
   Future<void> _openSession() async {
+    final provider = context.read<AppProvider>();
+    final currentUser = provider.currentUser;
     final box = _selectedBox;
     if (box == null) {
       _message('أنشئ صندوقًا وحدده أولًا');
@@ -140,7 +143,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         'opened_at': now,
         'opening_balance': opening,
         'status': 'مفتوحة',
-        'opened_by': context.read<AppProvider>().currentUser,
+        'opened_by': currentUser,
       });
       await _db.insert('audit_log', {
         'action': 'فتح جلسة صندوق',
@@ -159,6 +162,8 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
   }
 
   Future<void> _closeSession() async {
+    final provider = context.read<AppProvider>();
+    final currentUser = provider.currentUser;
     final session = _activeSession;
     final box = _selectedBox;
     if (session == null || box == null) {
@@ -218,7 +223,7 @@ class _CashBoxesScreenState extends State<CashBoxesScreen> {
         'actual_balance': actual,
         'difference': difference,
         'status': 'مغلقة',
-        'closed_by': context.read<AppProvider>().currentUser,
+        'closed_by': currentUser,
         'notes': notesController.text.trim(),
       }, where: 'id=? AND status=?', whereArgs: [session['id'], 'مفتوحة']);
       if (closed != 1) {
