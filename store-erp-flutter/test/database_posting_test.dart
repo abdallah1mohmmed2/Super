@@ -871,4 +871,137 @@ void main() {
     expect((destinationAfterRetry.single['balance'] as num).toDouble(), 40);
   });
 
+
+  test('purchase posting rolls back stock, cost, supplier balance and journal when cash is insufficient', () async {
+    final db = await helper.database;
+    final productId = await createProduct(cost: 4);
+    final supplierId = await db.insert('suppliers', {'name': 'مورد اختبار التراجع'});
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 4,
+    });
+    final purchaseId = await db.insert('purchases_header', {
+      'invoice_no': 'TEST-PURCHASE-ROLLBACK-1',
+      'invoice_date': today(),
+      'supplier_id': supplierId,
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'payment_method': 'نقدي',
+      'net': 20,
+      'paid': 20,
+      'status': 'مسودة',
+    });
+    await db.insert('purchases_lines', {
+      'purchase_id': purchaseId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 2,
+      'cost': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 20,
+    });
+
+    await expectLater(
+      helper.postPurchase(
+        purchaseId: purchaseId,
+        warehouseId: 1,
+        cashBoxId: 1,
+        supplierId: supplierId,
+        net: 20,
+        paid: 20,
+        lines: [
+          {'product_id': productId, 'qty': 2, 'factor': 1, 'cost': 10},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final stock = await helper.query('inventory',
+        where: 'product_id=? AND warehouse_id=?', whereArgs: [productId, 1]);
+    final product = await helper.query('products',
+        where: 'id=?', whereArgs: [productId]);
+    final supplier = await helper.query('suppliers',
+        where: 'id=?', whereArgs: [supplierId]);
+    final header = await helper.query('purchases_header',
+        where: 'id=?', whereArgs: [purchaseId]);
+    final journal = await helper.query('accounting_entries',
+        where: 'source_type=? AND source_id=?', whereArgs: ['PURCHASE', purchaseId]);
+
+    expect((stock.single['qty'] as num).toDouble(), 4);
+    expect((product.single['cost_price'] as num).toDouble(), 4);
+    expect((supplier.single['balance'] as num).toDouble(), 0);
+    expect(header.single['status'], 'مسودة');
+    expect(journal, isEmpty);
+  });
+
+  test('sales posting rolls back stock when invoice payment rows do not match paid total', () async {
+    final db = await helper.database;
+    final productId = await createProduct();
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 5,
+    });
+    final saleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-SALE-PAYMENT-MISMATCH-1',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cash_session_id': await createOpenSession(),
+      'cashier': 'test',
+      'payment_method': 'نقدي',
+      'net': 20,
+      'paid': 10,
+      'status': 'مسودة',
+    });
+    await db.insert('sales_lines', {
+      'sales_id': saleId,
+      'product_id': productId,
+      'unit': 'قطعة',
+      'factor': 1,
+      'qty': 2,
+      'price': 10,
+      'discount': 0,
+      'tax': 0,
+      'line_total': 20,
+    });
+    await db.insert('document_payments', {
+      'document_type': 'sales',
+      'document_id': saleId,
+      'payment_date': today(),
+      'method': 'نقدي',
+      'amount': 5,
+    });
+
+    await expectLater(
+      helper.postSale(
+        saleId: saleId,
+        warehouseId: 1,
+        cashBoxId: 1,
+        lines: [
+          {'product_id': productId, 'qty': 2.0, 'factor': 1.0},
+        ],
+        net: 20,
+        paid: 10,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    final stock = await helper.query('inventory',
+        where: 'product_id=? AND warehouse_id=?', whereArgs: [productId, 1]);
+    final cashBox = await helper.query('cash_boxes', where: 'id=?', whereArgs: [1]);
+    final header = await helper.query('sales_header',
+        where: 'id=?', whereArgs: [saleId]);
+    final journal = await helper.query('accounting_entries',
+        where: 'source_type=? AND source_id=?', whereArgs: ['SALE', saleId]);
+
+    expect((stock.single['qty'] as num).toDouble(), 5);
+    expect((cashBox.single['balance'] as num).toDouble(), 0);
+    expect(header.single['status'], 'مسودة');
+    expect(journal, isEmpty);
+  });
+
 }
