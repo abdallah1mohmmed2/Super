@@ -1600,11 +1600,11 @@ class _DataScreenState extends State<DataScreen> {
             trailing: Wrap(spacing: 8, children: [
               if (widget.screenKey == 'backup') ...[ActionButton('نسخة احتياطية الآن', icon: Icons.backup, primary: true, onPressed: _backup), ActionButton('استعادة نسخة', icon: Icons.settings_backup_restore, onPressed: _restoreBackup)],
               if (['sales','purchases','returns','transfers','damage','countdocs'].contains(widget.screenKey)) ActionButton('إضافة بند', icon: Icons.playlist_add, onPressed: _addLine),
-              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ وترحيل', icon: Icons.verified_outlined, primary: true, onPressed: _busy ? () {} : _saveAndPost),
+              if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ وترحيل', icon: Icons.verified_outlined, primary: true, onPressed: _busy ? null : _saveAndPost),
               if (['transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) ActionButton('ترحيل / اعتماد', icon: Icons.verified_outlined, primary: true, onPressed: _postSelected),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('فتح المحدد', icon: Icons.folder_open, onPressed: _openSelected),
               if (!_readOnly) ActionButton('جديد', icon: Icons.add, onPressed: _clear),
-              if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? () {} : _save),
+              if (!_readOnly) ActionButton(_selectedId == null ? 'حفظ' : 'تحديث', icon: Icons.save, primary: true, onPressed: _busy ? null : _save),
               if (!_readOnly) ActionButton('تفريغ', icon: Icons.cleaning_services, onPressed: _clear),
               if (widget.screenKey == 'users' && _selectedId != null) ActionButton('إعادة تعيين كلمة المرور', icon: Icons.password, onPressed: _resetUserPassword),
               if (['sales','purchases','returns'].contains(widget.screenKey)) ActionButton('حفظ كمسودة', icon: Icons.drafts_outlined, onPressed: _save),
