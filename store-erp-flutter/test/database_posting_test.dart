@@ -1004,4 +1004,185 @@ void main() {
     expect(journal, isEmpty);
   });
 
+
+
+  test('warehouse transfer moves stock atomically and prevents duplicate posting', () async {
+    final db = await helper.database;
+    final productId = await createProduct();
+    final destinationId = await db.insert('warehouses', {
+      'name': 'مخزن اختبار التحويل',
+      'is_active': 1,
+    });
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 8,
+    });
+    final transferId = await db.insert('warehouse_transfers', {
+      'transfer_no': 'TEST-WH-TRANSFER-1',
+      'transfer_date': today(),
+      'from_warehouse_id': 1,
+      'to_warehouse_id': destinationId,
+      'status': 'مسودة',
+    });
+    await db.insert('warehouse_transfer_lines', {
+      'transfer_id': transferId,
+      'product_id': productId,
+      'qty': 2,
+      'factor': 2,
+      'unit': 'علبة',
+    });
+
+    await helper.transferWarehouse(
+      transferId: transferId,
+      lines: [
+        {'product_id': productId, 'qty': 2, 'factor': 2},
+      ],
+    );
+
+    final source = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    final destination = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, destinationId],
+    );
+    final transfer = await helper.query(
+      'warehouse_transfers',
+      where: 'id=?',
+      whereArgs: [transferId],
+    );
+    expect((source.single['qty'] as num).toDouble(), 4);
+    expect((destination.single['qty'] as num).toDouble(), 4);
+    expect(transfer.single['status'], 'مرحل');
+
+    await expectLater(
+      helper.transferWarehouse(
+        transferId: transferId,
+        lines: [
+          {'product_id': productId, 'qty': 2, 'factor': 2},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+    final sourceAfterRetry = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    expect((sourceAfterRetry.single['qty'] as num).toDouble(), 4);
+  });
+
+  test('damaged goods posting reduces stock and creates balanced journal atomically', () async {
+    final db = await helper.database;
+    final productId = await createProduct(cost: 3);
+    await db.insert('inventory', {
+      'product_id': productId,
+      'warehouse_id': 1,
+      'qty': 7,
+    });
+    final documentId = await db.insert('damage_documents', {
+      'document_no': 'TEST-DAMAGE-1',
+      'document_date': today(),
+      'warehouse_id': 1,
+      'document_type': 'تالف',
+      'cause': 'اختبار',
+      'status': 'مسودة',
+    });
+    await db.insert('damage_lines', {
+      'document_id': documentId,
+      'product_id': productId,
+      'qty': 2,
+      'estimated_cost': 3,
+    });
+
+    await helper.postDamage(
+      documentId: documentId,
+      lines: [
+        {'product_id': productId, 'qty': 2, 'estimated_cost': 3},
+      ],
+    );
+
+    final stock = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    final document = await helper.query(
+      'damage_documents',
+      where: 'id=?',
+      whereArgs: [documentId],
+    );
+    expect((stock.single['qty'] as num).toDouble(), 5);
+    expect(document.single['status'], 'مرحل');
+    await expectJournalBalanced('DAMAGE', documentId);
+
+    await expectLater(
+      helper.postDamage(
+        documentId: documentId,
+        lines: [
+          {'product_id': productId, 'qty': 2, 'estimated_cost': 3},
+        ],
+      ),
+      throwsA(isA<StateError>()),
+    );
+    final stockAfterRetry = await helper.query(
+      'inventory',
+      where: 'product_id=? AND warehouse_id=?',
+      whereArgs: [productId, 1],
+    );
+    expect((stockAfterRetry.single['qty'] as num).toDouble(), 5);
+  });
+
+  test('daily close refuses open cash sessions and unposted operational documents', () async {
+    final db = await helper.database;
+    final sessionId = await createOpenSession();
+    await expectLater(
+      helper.closeDay(today(), 'test'),
+      throwsA(isA<StateError>()),
+    );
+    await db.update(
+      'cash_sessions',
+      {'status': 'مغلقة', 'closed_at': DateTime.now().toIso8601String()},
+      where: 'id=?',
+      whereArgs: [sessionId],
+    );
+    final productId = await createProduct();
+    final pendingSaleId = await db.insert('sales_header', {
+      'invoice_no': 'TEST-CLOSE-PENDING-1',
+      'invoice_date': today(),
+      'warehouse_id': 1,
+      'cash_box_id': 1,
+      'cashier': 'test',
+      'net': 0,
+      'paid': 0,
+      'status': 'مسودة',
+    });
+    expect(pendingSaleId, greaterThan(0));
+    expect(productId, greaterThan(0));
+    await expectLater(
+      helper.closeDay(today(), 'test'),
+      throwsA(isA<StateError>()),
+    );
+    await db.update(
+      'sales_header',
+      {'status': 'ملغي'},
+      where: 'id=?',
+      whereArgs: [pendingSaleId],
+    );
+    final result = await helper.closeDay(today(), 'test');
+    expect(result['close_date'], today());
+    expect(
+      await helper.query('daily_closings', where: 'close_date=?', whereArgs: [today()]),
+      hasLength(1),
+    );
+    await expectLater(
+      helper.closeDay(today(), 'test'),
+      throwsA(isA<StateError>()),
+    );
+  });
+
 }
