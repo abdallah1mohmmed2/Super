@@ -161,12 +161,13 @@ class _CashTransfersScreenState extends State<CashTransfersScreen> {
 
   Future<void> _post() async {
     if (_busy) return;
+    final provider = context.read<AppProvider>();
     setState(() => _busy = true);
     try {
       final id = await _persistDraft();
       if (id == null) throw StateError('تعذر إنشاء مستند التحويل');
       await _db.transferCash(transferId: id);
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       await _reload();
       if (mounted) _message('تم ترحيل التحويل وتحديث رصيدي الصندوقين');
     } catch (e) {
