@@ -10,19 +10,36 @@ jobs:
     name: SonarQube
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Shallow clones should be disabled for a better relevancy of analysis
+          fetch-depth: 0
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
       - name: Cache SonarQube packages
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@v4
         with:
           path: ~/.sonar/cache
           key: ${{ runner.os }}-sonar
           restore-keys: ${{ runner.os }}-sonar
-      # The analysis requires to retrieve dependencies and build successfully
-      - name: Build
-        run: <commands_to_build_your_project>
+
+      - name: Install dependencies
+        working-directory: store-erp-flutter
+        run: flutter pub get
+
+      - name: Analyze Flutter project
+        working-directory: store-erp-flutter
+        run: flutter analyze --no-pub
+
+      - name: Run tests
+        working-directory: store-erp-flutter
+        run: flutter test --no-pub
+
       - name: SonarQube Scan
-        uses: SonarSource/sonarqube-scan-action@d209202bc7d53ff1cc128f7f907dac145c9d6ae9 # v8.3.0
+        uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
