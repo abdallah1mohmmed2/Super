@@ -177,6 +177,7 @@ class _BackupScreenState extends State<BackupScreen> {
 
   Future<void> _restore() async {
     if (_busy) return;
+    final provider = context.read<AppProvider>();
     final path = _restorePath.text.trim();
     if (path.isEmpty || !await File(path).exists()) { _message('اختر ملف نسخة احتياطية موجودًا أولًا'); return; }
     final confirmed = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
@@ -200,7 +201,7 @@ class _BackupScreenState extends State<BackupScreen> {
     try {
       await _db.restoreDatabaseFrom(path);
       // Refresh provider-backed screens after the database connection has been replaced.
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       await _reloadHistory();
       if (mounted) setState(() => _status = 'اكتمل الاسترجاع من: $path');
       _message('تم استرجاع قاعدة البيانات. راجع البيانات قبل متابعة العمل.');
