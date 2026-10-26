@@ -671,6 +671,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _addLine() async {
+    final provider = context.read<AppProvider>();
     if (_selectedId != null) { 
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1); 
       if (selected.isNotEmpty && selected.first['status'] != 'مسودة') { _message('لا يمكن إضافة بنود إلى مستند غير مسودة'); return; } 
@@ -791,7 +792,7 @@ class _DataScreenState extends State<DataScreen> {
       }
       
       if (!mounted) return; 
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       _message('تمت إضافة البند');
     } catch(e) {
       _message('تعذر إضافة البند: $e');
@@ -1171,7 +1172,7 @@ class _DataScreenState extends State<DataScreen> {
       final current = await DatabaseHelper.instance.query('sales_return_lines', where: 'return_id=?', whereArgs: [_selectedId]);
       final total = current.fold<double>(0, (sum, row) => sum + (((row['qty'] as num?)?.toDouble() ?? 0) * ((row['price'] as num?)?.toDouble() ?? 0)));
       await DatabaseHelper.instance.update('sales_returns', {'total': total}, where: 'id=?', whereArgs: [_selectedId]);
-      if (mounted) { await context.read<AppProvider>().refresh(); _message('تمت إضافة الصنف من الفاتورة الأصلية'); setState(() {}); }
+      if (mounted) { await provider.refresh(); _message('تمت إضافة الصنف من الفاتورة الأصلية'); setState(() {}); }
     } catch (e) { _message('تعذر استدعاء الصنف: $e'); }
     qtyController.dispose();
   }
@@ -1225,6 +1226,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _deletePayment(Map<String,Object?> row) async {
+    final provider = context.read<AppProvider>();
     if (_selectedId == null) return;
     final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
     final headers = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
@@ -1237,7 +1239,7 @@ class _DataScreenState extends State<DataScreen> {
     try {
       await DatabaseHelper.instance.delete('document_payments', where: 'id=? AND document_type=? AND document_id=?', whereArgs: [row['id'], _paymentDocumentType, _selectedId]);
       await _syncPaidAmount();
-      if (mounted) { await context.read<AppProvider>().refresh(); _message('تم حذف الدفعة'); setState(() {}); }
+      if (mounted) { await provider.refresh(); _message('تم حذف الدفعة'); setState(() {}); }
     } catch (e) { _message('تعذر حذف الدفعة: $e'); }
   }
 
@@ -1289,10 +1291,11 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _delete(Map<String,Object?> row) async {
+    final provider = context.read<AppProvider>();
     if (widget.screenKey == 'users') {
       final yes = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(title: const Text('تعطيل المستخدم'), content: const Text('سيتم تعطيل المستخدم منطقيًا مع الاحتفاظ بسجله. هل تريد المتابعة؟'), actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')), FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تعطيل'))]));
       if (yes != true || !mounted) return;
-      try { await DatabaseHelper.instance.update('users', {'is_active': 0}, where: 'id = ?', whereArgs: [row['id']]); if (_selectedId == row['id']) _clear(); await context.read<AppProvider>().refresh(); _message('تم تعطيل المستخدم دون حذف سجله'); } catch (e) { _message('تعذر تعطيل المستخدم: $e'); }
+      try { await DatabaseHelper.instance.update('users', {'is_active': 0}, where: 'id = ?', whereArgs: [row['id']]); if (_selectedId == row['id']) _clear(); await provider.refresh(); _message('تم تعطيل المستخدم دون حذف سجله'); } catch (e) { _message('تعذر تعطيل المستخدم: $e'); }
       return;
     }
     if (_readOnly) { _message('لا يمكن حذف رصيد المخزون مباشرة؛ استخدم مستند حركة معتمدًا'); return; }
@@ -1303,7 +1306,7 @@ class _DataScreenState extends State<DataScreen> {
     if (yes != true || !mounted) return;
     
     try { 
-      await context.read<AppProvider>().remove(config.table, id); 
+      await provider.remove(config.table, id); 
       if (_selectedId == id) _clear(); 
       _message('تم حذف السجل'); 
     } catch (e) { 
@@ -1521,6 +1524,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _restoreBackup() async {
+    final provider = context.read<AppProvider>();
     final controller = TextEditingController(text: _restorePathController.text);
     final path = await showDialog<String>(context:context, builder:(ctx)=>AlertDialog(
       title:const Text('استعادة نسخة احتياطية'),
@@ -1558,7 +1562,7 @@ class _DataScreenState extends State<DataScreen> {
       await DatabaseHelper.instance.database;
       
       if (!mounted) return; 
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       _message('تمت استعادة النسخة بنجاح. يوصى بتسجيل الخروج ثم الدخول مجددًا.');
     } catch(e) { 
       _message('تعذرت الاستعادة: $e'); 
@@ -1587,7 +1591,8 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<List<Map<String, Object?>>> _loadRows() async {
-    final rows = await context.read<AppProvider>().load(config.table);
+    final provider = context.read<AppProvider>();
+    final rows = await provider.load(config.table);
     final expectedType = switch (widget.screenKey) {
       'counts' => 'فعلي',
       'dailycount' => 'يومي',
@@ -1607,9 +1612,10 @@ class _DataScreenState extends State<DataScreen> {
   @override 
   Future<void> _refreshScreen() async {
     if (_busy) return;
+    final provider = context.read<AppProvider>();
     setState(() => _referencesLoading = true);
     try {
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
       await _loadReferenceOptions();
       if (mounted) setState(() {});
     } catch (e) {
