@@ -1042,12 +1042,15 @@ class _DataScreenState extends State<DataScreen> {
     final paid = payments.fold<double>(0, (sum, row) => sum + ((row['amount'] as num?)?.toDouble() ?? 0));
     final table = widget.screenKey == 'sales' ? 'sales_header' : 'purchases_header';
     final methods = payments.map((row) => (row['method'] ?? 'نقدي').toString()).toSet();
-    final paymentMethod = methods.isEmpty ? null : methods.length == 1 ? methods.first : 'متعدد';
+    final currentMethod = _controllers['payment_method']?.text.trim() ?? '';
+    final paymentMethod = methods.isEmpty
+        ? (currentMethod.isEmpty || currentMethod == 'متعدد' ? 'نقدي' : currentMethod)
+        : methods.length == 1 ? methods.first : 'متعدد';
     await DatabaseHelper.instance.update(table, {
       'paid': paid,
-      if (paymentMethod != null) 'payment_method': paymentMethod,
+      'payment_method': paymentMethod,
     }, where: 'id=?', whereArgs: [_selectedId]);
-    if (paymentMethod != null && _controllers.containsKey('payment_method')) {
+    if (_controllers.containsKey('payment_method')) {
       _controllers['payment_method']!.text = paymentMethod;
     }
   }
