@@ -808,6 +808,7 @@ class _DataScreenState extends State<DataScreen> {
   
   Future<void> _editLine(Map<String, Object?> row) async {
     if (_selectedId == null || !['sales', 'purchases', 'returns'].contains(widget.screenKey)) return;
+    final provider = context.read<AppProvider>();
     final table = _lineTable;
     final parent = _lineParent;
     if (table == null || parent == null) return;
@@ -927,7 +928,8 @@ class _DataScreenState extends State<DataScreen> {
       await DatabaseHelper.instance.update(table, updates, where: 'id=? AND $parent=?', whereArgs: [row['id'], _selectedId]);
       await _recalculateDraftTotals();
       if (!mounted) return;
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
+      if (!mounted) return;
       _message('تم تعديل البند وتحديث إجمالي المستند');
       setState(() {});
     } catch (e) {
@@ -939,6 +941,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _deleteLine(Map<String,Object?> row) async {
+    final provider = context.read<AppProvider>();
     final table=_lineTable, parent=_lineParent; 
     if(table==null||parent==null||_selectedId==null) return;
     
@@ -965,7 +968,8 @@ class _DataScreenState extends State<DataScreen> {
       }
       
       if (!mounted) return; 
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
+      if (!mounted) return;
       _message('تم حذف البند');
       setState((){});
     } catch(e) {
@@ -975,6 +979,7 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _postSelected() async {
     if (_selectedId == null) { _message('حدد مستندًا أولاً'); return; }
+    final provider = context.read<AppProvider>();
     final db = DatabaseHelper.instance;
     try {
       final headerRows = await db.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1);
@@ -1041,7 +1046,8 @@ class _DataScreenState extends State<DataScreen> {
         limit: 1,
       );
       if (updatedHeader.isNotEmpty) _select(updatedHeader.first);
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
+      if (!mounted) return;
       await _loadReferenceOptions();
       _message('تم ترحيل المستند وتحديث حالته وبياناته');
       if (mounted) setState(() {});
@@ -1073,11 +1079,14 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _loadOriginalInvoice() async {
     if (widget.screenKey != 'returns' || _selectedId == null) { _message('احفظ رأس المرتجع وحدده أولاً'); return; }
+    final provider = context.read<AppProvider>();
     final returns = await DatabaseHelper.instance.query('sales_returns', where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (!mounted) return;
     if (returns.isEmpty || returns.first['status'] == 'مرحل') { _message('المرتجع غير موجود أو مرحل بالفعل'); return; }
     final salesId = (returns.first['sales_id'] as num?)?.toInt();
     if (salesId == null) { _message('اختر الفاتورة الأصلية من حقل «معرف فاتورة البيع» أولاً'); return; }
     final saleHeaders = await DatabaseHelper.instance.query('sales_header', where: 'id=?', whereArgs: [salesId], limit: 1);
+    if (!mounted) return;
     if (saleHeaders.isEmpty || saleHeaders.first['status'] != 'مرحل') { _message('يجب اختيار فاتورة بيع مرحلة'); return; }
     final originalHeader = saleHeaders.first;
     final originalCustomerId = (originalHeader['customer_id'] as num?)?.toInt();
@@ -1086,7 +1095,8 @@ class _DataScreenState extends State<DataScreen> {
     await DatabaseHelper.instance.update('sales_returns', {'customer_id': originalCustomerId, 'warehouse_id': originalWarehouseId}, where: 'id=?', whereArgs: [_selectedId]);
     if (_controllers.containsKey('customer_id')) _controllers['customer_id']!.text = originalCustomerId?.toString() ?? '';
     if (_controllers.containsKey('warehouse_id')) _controllers['warehouse_id']!.text = originalWarehouseId.toString();
-    await context.read<AppProvider>().refresh();
+    await provider.refresh();
+    if (!mounted) return;
     final soldLines = await DatabaseHelper.instance.query('sales_lines', where: 'sales_id=?', whereArgs: [salesId], orderBy: 'id');
     if (soldLines.isEmpty) { _message('الفاتورة الأصلية لا تحتوي على أصناف'); return; }
     final allReturns = await DatabaseHelper.instance.query('sales_returns', where: 'sales_id=? AND status=?', whereArgs: [salesId, 'مرحل']);
@@ -1168,8 +1178,10 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _addPayment() async {
     if (_selectedId == null || !['sales','purchases','returns'].contains(widget.screenKey)) { _message('احفظ المستند وحدده أولاً'); return; }
+    final provider = context.read<AppProvider>();
     final headerTable = widget.screenKey == 'sales' ? 'sales_header' : widget.screenKey == 'purchases' ? 'purchases_header' : 'sales_returns';
     final headerRows = await DatabaseHelper.instance.query(headerTable, where: 'id=?', whereArgs: [_selectedId], limit: 1);
+    if (!mounted) return;
     if (headerRows.isEmpty) { _message('المستند غير موجود'); return; }
     if (headerRows.first['status'] != 'مسودة') { _message('لا يمكن تعديل دفعات مستند غير مسودة'); return; }
     final amountController = TextEditingController();
@@ -1207,7 +1219,7 @@ class _DataScreenState extends State<DataScreen> {
         'reference': referenceController.text.trim(), 'notes': notesController.text.trim(),
       });
       await _syncPaidAmount();
-      if (mounted) { await context.read<AppProvider>().refresh(); _message(widget.screenKey == 'returns' ? 'تم تسجيل التسوية المالية للمرتجع' : 'تمت إضافة الدفعة وتحديث المدفوع'); setState(() {}); }
+      if (mounted) { await provider.refresh(); if (!mounted) return; _message(widget.screenKey == 'returns' ? 'تم تسجيل التسوية المالية للمرتجع' : 'تمت إضافة الدفعة وتحديث المدفوع'); setState(() {}); }
     } catch (e) { _message('تعذرت إضافة الدفعة: $e'); }
     amountController.dispose(); referenceController.dispose(); notesController.dispose();
   }
@@ -1471,6 +1483,7 @@ class _DataScreenState extends State<DataScreen> {
   }
 
   Future<void> _backup() async {
+    final provider = context.read<AppProvider>();
     setState(() => _busy = true);
     String? createdPath;
     try {
@@ -1492,12 +1505,13 @@ class _DataScreenState extends State<DataScreen> {
         status = 'نجاح — اجتاز ملف النسخة فحص سلامة SQLite';
       }
       if (!mounted) return;
-      await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': status});
+      await provider.create('backup_history', {'file_path': createdPath, 'status': status});
+      if (!mounted) return;
       _lastBackupSucceeded = true;
       _message('تم إنشاء النسخة الاحتياطية: $createdPath');
     } catch (e) {
       if (createdPath != null) {
-        try { await context.read<AppProvider>().create('backup_history', {'file_path': createdPath, 'status': 'فشل: $e'}); } catch (_) {}
+        try { await provider.create('backup_history', {'file_path': createdPath, 'status': 'فشل: $e'}); } catch (_) {}
       }
       _lastBackupSucceeded = false;
       _message('فشل إنشاء النسخة الاحتياطية: $e');
