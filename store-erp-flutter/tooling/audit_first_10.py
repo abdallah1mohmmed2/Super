@@ -10,7 +10,7 @@ start=db_src.index('final statements = <String>['); end=db_src.index('];',start)
 sqls=re.findall(r"'''(.*?)'''",db_src[start:end],re.S)
 keys=['products','customers','suppliers','users','sales','returns','purchases','inventory','transfers','damage']
 configs={}
-for m in re.finditer(r"'([^']+)': ScreenConfig\('([^']*)','([^']*)',\[(.*?)\],\[(.*?)\]\)",config_src):
+for m in re.finditer(r"'([^']+)': ScreenConfig\('([^']*)','([^']*)',\[([^\]]*)\],\[([^\]]*)\]\)",config_src):
     key,title,table,fields,cols=m.groups()
     configs[key]={'table':table,'fields':re.findall(r"'([^']+)'",fields),'columns':re.findall(r"'([^']+)'",cols)}
 checks=[]
