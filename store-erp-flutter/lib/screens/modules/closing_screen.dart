@@ -39,6 +39,8 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
   }
 
   Future<void> _closeDay() async {
+    final provider = context.read<AppProvider>();
+    final currentUser = provider.currentUser;
     final date = _date.toIso8601String().substring(0, 10);
     final today = DateTime.now().toIso8601String().substring(0, 10);
     if (date.compareTo(today) > 0) {
@@ -71,11 +73,8 @@ class _DailyClosingScreenState extends State<DailyClosingScreen> {
     setState(() => _busy = true);
 
     try {
-      final result = await DatabaseHelper.instance.closeDay(
-        date,
-        context.read<AppProvider>().currentUser,
-      );
-      await context.read<AppProvider>().refresh();
+      final result = await DatabaseHelper.instance.closeDay(date, currentUser);
+      await provider.refresh();
       _reload();
 
       if (mounted) {
