@@ -7,7 +7,7 @@ class SectionCard extends StatelessWidget {
   @override Widget build(BuildContext context) => Card(margin: const EdgeInsets.only(bottom: 14), child: Padding(padding: const EdgeInsets.all(16), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [Row(children: [Expanded(child: Text(title, style: const TextStyle(fontSize: 17,fontWeight: FontWeight.bold))), if(trailing!=null) trailing!]), const SizedBox(height: 14), child])));
 }
 class ActionButton extends StatelessWidget {
- final String label; final VoidCallback onPressed; final IconData? icon; final bool primary, danger;
+ final String label; final VoidCallback? onPressed; final IconData? icon; final bool primary, danger;
  const ActionButton(this.label,{super.key,required this.onPressed,this.icon,this.primary=false,this.danger=false});
  @override Widget build(BuildContext context) => FilledButton.tonalIcon(onPressed:onPressed, icon:Icon(icon??Icons.check,size:18), label:Text(label), style:FilledButton.styleFrom(backgroundColor: danger?Colors.red.shade50:(primary?AppTheme.emerald.withValues(alpha:.14):null), foregroundColor:danger?Colors.red.shade700:(primary?const Color(0xFF047857):AppTheme.navy), padding:const EdgeInsets.symmetric(horizontal:14,vertical:13), shape:RoundedRectangleBorder(borderRadius:BorderRadius.circular(12))));
 }
