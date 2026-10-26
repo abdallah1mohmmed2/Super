@@ -474,6 +474,9 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<bool> _save() async {
     if (_readOnly) { _message(widget.screenKey == 'inventory' ? 'أرصدة المخزون للعرض فقط؛ عدّلها عبر ترحيل فاتورة أو تحويل أو جرد' : 'هذه الشاشة للعرض فقط؛ نفّذ التعديل من شاشة العمليات المناسبة'); return false; }
+    // Capture context-dependent values before any await.
+    final provider = context.read<AppProvider>();
+    final currentUser = provider.currentUser;
     if (_selectedId != null && ['sales','purchases','returns','transfers','damage','cashtransfers','countdocs'].contains(widget.screenKey)) {
       final selected = await DatabaseHelper.instance.query(config.table, where:'id=?', whereArgs:[_selectedId], limit:1);
       if (selected.isNotEmpty && selected.first['status'] != 'مسودة') { _message('لا يمكن تعديل مستند غير مسودة؛ أنشئ مستندًا عكسيًا عند الحاجة'); return false; }
@@ -494,7 +497,7 @@ class _DataScreenState extends State<DataScreen> {
       final enteredCashier = _controllers['cashier']!.text.trim();
       data['cashier'] = enteredCashier.isNotEmpty
           ? enteredCashier
-          : context.read<AppProvider>().currentUser;
+          : currentUser;
     }
     if (data.isEmpty) { _message('أدخل بيانات قبل الحفظ'); return false; }
     final requiredError = _validateRequired(data);
@@ -521,7 +524,6 @@ class _DataScreenState extends State<DataScreen> {
     
     setState(() => _busy = true);
     try {
-      final provider = context.read<AppProvider>();
       if (_selectedId == null) {
         if (config.table == 'users') { data.putIfAbsent('is_active', () => 1); data.putIfAbsent('roles', () => 'كاشير'); }
         _selectedId = await provider.create(config.table, data);
@@ -555,6 +557,9 @@ class _DataScreenState extends State<DataScreen> {
 
   Future<void> _ensureManagerApprovalRequest() async {
     if (_selectedId == null || widget.screenKey != 'sales') return;
+    // Keep the provider/user before the database awaits below.
+    final provider = context.read<AppProvider>();
+    final currentUser = provider.currentUser;
     final headers = await DatabaseHelper.instance.query(
       'sales_header',
       where: 'id=?',
@@ -585,8 +590,7 @@ class _DataScreenState extends State<DataScreen> {
       'entity_id': _selectedId,
       'request_type': 'اعتماد فاتورة مبيعات',
       'reference': (header['invoice_no'] ?? _selectedId).toString(),
-      'requested_by': context.read<AppProvider>().currentUser,
-      'request_date': now,
+      'requested_by': currentUser,      'request_date': now,
       'request_notes': 'العميل المحدد يتطلب موافقة المدير قبل ترحيل الفاتورة.',
       'status': 'معلق',
       'decision_notes': null,
@@ -604,7 +608,7 @@ class _DataScreenState extends State<DataScreen> {
       );
     }
     if (mounted) {
-      await context.read<AppProvider>().refresh();
+      await provider.refresh();
     }
   }
 
@@ -694,6 +698,17 @@ class _DataScreenState extends State<DataScreen> {
     final taxController = TextEditingController(text:'0');
     final productSearchController = TextEditingController();
     final allUnits = await DatabaseHelper.instance.query('product_units', orderBy:'unit_name');
+    if (!mounted) {
+      qtyController.dispose();
+      priceController.dispose();
+      batchController.dispose();
+      expiryController.dispose();
+      productionController.dispose();
+      discountController.dispose();
+      taxController.dispose();
+      productSearchController.dispose();
+      return;
+    }
     List<Map<String,Object?>> unitOptions = allUnits.where((u)=>(u['product_id'] as num?)?.toInt()==productId).toList();
     int? selectedUnitId = unitOptions.isEmpty ? null : (unitOptions.first['id'] as num).toInt();
     double unitFactor = unitOptions.isEmpty ? 1 : ((unitOptions.first['factor'] as num?)?.toDouble() ?? 1);
@@ -802,6 +817,7 @@ class _DataScreenState extends State<DataScreen> {
       whereArgs: [_selectedId],
       limit: 1,
     );
+    if (!mounted) return;
     if (headers.isEmpty || headers.first['status'] != 'مسودة') {
       _message('لا يمكن تعديل بند مستند غير موجود أو غير مسودة');
       return;
