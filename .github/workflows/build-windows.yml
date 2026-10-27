@@ -68,7 +68,7 @@ jobs:
           flutter build windows --release
           if ($LASTEXITCODE -ne 0) { throw "flutter build windows failed." }
 
-      - name: Package Windows app
+      - name: Prepare Windows app files
         shell: pwsh
         run: |
           $releaseDir = "build/windows/x64/runner/Release"
@@ -82,13 +82,22 @@ jobs:
           if ($null -eq $exe) {
             throw "No .exe file was produced by the Windows build."
           }
-          Compress-Archive -Path "$releaseDir/*" -DestinationPath "../Store-ERP-Windows-x64.zip" -Force
-          Write-Host "Executable: $($exe.FullName)"
+          $packageDir = Join-Path $env:GITHUB_WORKSPACE "windows-package"
+          if (Test-Path $packageDir) { Remove-Item $packageDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $packageDir | Out-Null
+          Copy-Item -Path "$releaseDir/*" -Destination $packageDir -Recurse -Force
+          $packagedExe = Get-ChildItem -Path $packageDir -Filter "*.exe" -File -Recurse | Select-Object -First 1
+          if ($null -eq $packagedExe) {
+            throw "The staged Windows package does not contain an executable."
+          }
+          Write-Host "Executable: $($packagedExe.FullName)"
+          Write-Host "Staged files:"
+          Get-ChildItem -Path $packageDir -File -Recurse | Select-Object FullName, Length
 
       - name: Upload Windows build artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: Store-ERP-Windows-x64
-          path: Store-ERP-Windows-x64.zip
+          path: windows-package/**
           if-no-files-found: error
           retention-days: 14
